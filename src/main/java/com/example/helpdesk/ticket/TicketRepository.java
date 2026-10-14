@@ -10,7 +10,13 @@ public interface TicketRepository extends JpaRepository<Ticket, Long> {
 	// @EntityGraph loads reporter and assignee in the same query (a join),
 	// instead of one extra query per ticket when they are read later.
 	@EntityGraph(attributePaths = { "reporter", "assignee" })
+	List<Ticket> findAllByOrderByCreatedAtDesc();
+
+	@EntityGraph(attributePaths = { "reporter", "assignee" })
 	List<Ticket> findByStatusOrderByCreatedAtDesc(TicketStatus status);
+
+	@EntityGraph(attributePaths = { "reporter", "assignee" })
+	List<Ticket> findByStatusAndAssigneeIdOrderByCreatedAtDesc(TicketStatus status, Long assigneeId);
 
 	@EntityGraph(attributePaths = { "reporter", "assignee" })
 	List<Ticket> findByAssigneeIdOrderByCreatedAtDesc(Long assigneeId);
