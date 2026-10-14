@@ -5,6 +5,7 @@ import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.example.helpdesk.common.ConflictException;
 import com.example.helpdesk.common.NotFoundException;
 
 @Service
@@ -20,6 +21,9 @@ public class UserService {
 
 	@Transactional
 	public UserResponse create(CreateUserRequest request) {
+		if (users.existsByEmail(request.email())) {
+			throw new ConflictException("Email " + request.email() + " is already registered");
+		}
 		User user = users.save(new User(request.email(), request.name(), request.role()));
 		return UserResponse.from(user);
 	}

@@ -13,6 +13,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import jakarta.validation.Valid;
+
 @RestController
 @RequestMapping("/api/tickets")
 public class TicketController {
@@ -25,7 +27,7 @@ public class TicketController {
 
 	@PostMapping
 	@ResponseStatus(HttpStatus.CREATED)
-	public TicketResponse create(@RequestBody CreateTicketRequest request) {
+	public TicketResponse create(@Valid @RequestBody CreateTicketRequest request) {
 		return ticketService.create(request);
 	}
 
@@ -53,7 +55,7 @@ public class TicketController {
 
 	@PostMapping("/{id}/comments")
 	@ResponseStatus(HttpStatus.CREATED)
-	public CommentResponse addComment(@PathVariable Long id, @RequestBody CreateCommentRequest request) {
+	public CommentResponse addComment(@PathVariable Long id, @Valid @RequestBody CreateCommentRequest request) {
 		return ticketService.addComment(id, request);
 	}
 

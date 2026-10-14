@@ -5,7 +5,9 @@ import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.example.helpdesk.common.BadRequestException;
 import com.example.helpdesk.common.NotFoundException;
+import com.example.helpdesk.user.Role;
 import com.example.helpdesk.user.User;
 import com.example.helpdesk.user.UserRepository;
 
@@ -68,7 +70,11 @@ public class TicketService {
 			ticket.setPriority(request.priority());
 		}
 		if (request.assigneeId() != null) {
-			ticket.setAssignee(findUser(request.assigneeId()));
+			User assignee = findUser(request.assigneeId());
+			if (assignee.getRole() == Role.CUSTOMER) {
+				throw new BadRequestException("Tickets can only be assigned to agents or admins");
+			}
+			ticket.setAssignee(assignee);
 		}
 		// Write the changes now so @UpdateTimestamp sets updatedAt before we build the response.
 		tickets.flush();
