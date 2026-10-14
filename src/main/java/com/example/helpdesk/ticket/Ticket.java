@@ -32,11 +32,11 @@ public class Ticket {
 	private String description;
 
 	@Enumerated(EnumType.STRING)
-	@Column(nullable = false)
+	@Column(nullable = false, length = 20)
 	private TicketStatus status = TicketStatus.OPEN;
 
 	@Enumerated(EnumType.STRING)
-	@Column(nullable = false)
+	@Column(nullable = false, length = 20)
 	private Priority priority;
 
 	// LAZY: the user row is only loaded if the code actually reads it.

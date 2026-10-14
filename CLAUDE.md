@@ -47,7 +47,7 @@ This is a learning project: a support helpdesk (Users, Tickets, Comments, later 
 ## Stack
 
 - **Spring Boot 4.1.1**, **Java 25**, Maven (use the bundled `./mvnw` wrapper).
-- Dependencies: Spring Web MVC (`spring-boot-starter-webmvc`), Spring Data JPA, Bean Validation, Actuator, DevTools, and the PostgreSQL driver. Tests use Testcontainers 2.x (`testcontainers-postgresql`, class `org.testcontainers.postgresql.PostgreSQLContainer`; the 1.x package names don't apply).
+- Dependencies: Spring Web MVC (`spring-boot-starter-webmvc`), Spring Data JPA, Bean Validation, Actuator, DevTools, the PostgreSQL driver, and Flyway (`spring-boot-starter-flyway` plus `flyway-database-postgresql`, which Flyway needs for Postgres support). Tests use Testcontainers 2.x (`testcontainers-postgresql`, class `org.testcontainers.postgresql.PostgreSQLContainer`; the 1.x package names don't apply).
 - Spring Boot 4 splits starters into finer modules, and each has its own test starter (`spring-boot-starter-webmvc-test`, `spring-boot-starter-data-jpa-test`, etc.). When you add a starter, also add its matching `-test` starter if tests need its slices (`@WebMvcTest`, `@DataJpaTest`). Spring Boot 2/3 starter names (e.g. `spring-boot-starter-web`) don't apply here.
 - `pom.xml` contains empty `<licenses>`, `<developers>`, and `<scm>` elements on purpose. They block inheritance from the parent POM, so don't remove them.
 
@@ -68,7 +68,9 @@ No linter or formatter is configured. Tests need Docker running (OrbStack is ins
 
 ## Configuration
 
-Config lives in `src/main/resources/application.properties`. The app connects to Postgres 18 from `compose.yaml` (database, user and password are all `helpdesk`). Override the connection with the `DB_URL`, `DB_USERNAME` and `DB_PASSWORD` environment variables. Hibernate currently creates the schema (`ddl-auto=update`), and the SQL it generates is logged at debug level. To query the database directly: `docker compose exec postgres psql -U helpdesk -d helpdesk`.
+Config lives in `src/main/resources/application.properties`. The app connects to Postgres 18 from `compose.yaml` (database, user and password are all `helpdesk`). Override the connection with the `DB_URL`, `DB_USERNAME` and `DB_PASSWORD` environment variables. The SQL Hibernate runs is logged at debug level.
+
+**Schema changes go through Flyway** (`src/main/resources/db/migration`, Postgres SQL). Hibernate runs with `ddl-auto=validate`, so it never changes tables, and startup fails if an entity doesn't match the schema. To change an entity's columns, add a new `V<n>__description.sql` migration alongside the entity change. Never edit a migration that has already been applied. Enum columns are `varchar(20)` with `@Column(length = 20)` and no check constraints. Foreign key columns used in queries get an explicit index, because Postgres doesn't index them automatically. To query the database directly: `docker compose exec postgres psql -U helpdesk -d helpdesk`.
 
 Tests that need a database `@Import(TestcontainersConfiguration.class)`. Its `@ServiceConnection` Postgres container overrides `spring.datasource.*`, so tests never touch the Compose database. `@WebMvcTest` and plain unit tests don't need it.
 
