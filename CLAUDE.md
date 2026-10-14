@@ -61,8 +61,13 @@ docker compose down                    # stop it (data kept in the pgdata volume
 ./mvnw test -Dtest=TicketControllerTests              # run a single test class
 ./mvnw test -Dtest=TicketServiceTests#updateAssignsTicketToAgent  # run a single test method
 ./mvnw clean package                   # build the jar into target/
-./mvnw spring-boot:build-image         # build an OCI image
+docker compose --profile app up -d --build   # build the image and run app + Postgres in containers
+docker compose --profile app down            # stop both (plain `down` leaves the app container running)
 ```
+
+The `app` Compose service uses a profile, so plain `docker compose up -d` starts only Postgres for `spring-boot:run` development. Set `APP_PORT=18080` to publish the containerized app on another host port.
+
+The [Dockerfile](Dockerfile) is multi-stage. A JDK stage runs `./mvnw package -DskipTests` (tests need Docker, which isn't available inside a build) with a BuildKit cache mount for `~/.m2`, then extracts Boot's jar layers (`-Djarmode=tools extract --layers --launcher`). The JRE stage copies the layers in order, from least to most frequently changing, runs as the non-root `spring` user, and starts with `JarLauncher`. Inside Compose the app reaches the database through `DB_URL=jdbc:postgresql://postgres:5432/helpdesk` (the service name, not `localhost`).
 
 No linter or formatter is configured. Tests need Docker running (OrbStack is installed), but not `docker compose`. Testcontainers starts its own Postgres.
 

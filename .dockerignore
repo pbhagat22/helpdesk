@@ -1,0 +1,13 @@
+# Files Docker never sends to the build (smaller, faster builds; no local junk or secrets)
+target/
+.git/
+.gitignore
+.gitattributes
+.vscode/
+.idea/
+.claude/
+*.md
+compose.yaml
+Dockerfile
+.dockerignore
+.env*

@@ -1,4 +1,7 @@
-# Local development services. Start with `docker compose up -d`, stop with `docker compose down`.
+# Local services.
+#   docker compose up -d                       Postgres only (run the app with ./mvnw spring-boot:run)
+#   docker compose --profile app up -d --build Postgres + the app as a container
+#   docker compose --profile app down          stop everything (add -v to wipe the database)
 services:
   postgres:
     image: postgres:18
@@ -16,6 +19,22 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  app:
+    # Only started with --profile app, so plain `docker compose up` stays Postgres-only
+    profiles: ["app"]
+    build: .
+    image: helpdesk:latest
+    environment:
+      # Inside the Compose network, Postgres is reachable by its service name, not localhost
+      DB_URL: jdbc:postgresql://postgres:5432/helpdesk
+      DB_USERNAME: helpdesk
+      DB_PASSWORD: helpdesk
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
 
 volumes:
   pgdata:
