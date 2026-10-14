@@ -1,0 +1,21 @@
+# Local development services. Start with `docker compose up -d`, stop with `docker compose down`.
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: helpdesk
+      POSTGRES_USER: helpdesk
+      POSTGRES_PASSWORD: helpdesk
+    ports:
+      - "5432:5432"
+    volumes:
+      # Named volume: data survives `docker compose down` (use `down -v` to wipe it)
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U helpdesk -d helpdesk"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:

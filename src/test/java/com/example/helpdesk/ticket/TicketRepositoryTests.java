@@ -7,13 +7,16 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
+import org.springframework.context.annotation.Import;
 
+import com.example.helpdesk.TestcontainersConfiguration;
 import com.example.helpdesk.user.Role;
 import com.example.helpdesk.user.User;
 
-// @DataJpaTest starts only the JPA layer (no web server) against an in-memory
-// database, and rolls back each test's transaction so tests don't affect each other.
+// @DataJpaTest starts only the JPA layer (no web server) against a Postgres
+// Testcontainers database, and rolls back each test's transaction so tests don't affect each other.
 @DataJpaTest
+@Import(TestcontainersConfiguration.class)
 class TicketRepositoryTests {
 
 	@Autowired

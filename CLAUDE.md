@@ -16,7 +16,7 @@ The code is organized by feature package under `com.example.helpdesk`: `user`, `
 **Tests**, in `src/test/java`, mirror the main packages:
 - `*ServiceTests`: plain Mockito unit tests with no Spring context.
 - `*ControllerTests`: `@WebMvcTest` with a `@MockitoBean` service and `MockMvcTester` (AssertJ style).
-- `*RepositoryTests`: `@DataJpaTest` with `TestEntityManager`.
+- `*RepositoryTests`: `@DataJpaTest` with `TestEntityManager`, against Testcontainers Postgres.
 - `HelpdeskFlowTests`: one end-to-end `@SpringBootTest` + `@AutoConfigureMockMvc` test with nothing mocked.
 
 In Spring Boot 4 the test annotations live in per-module packages, e.g. `org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest` and `org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest`.
@@ -47,13 +47,15 @@ This is a learning project: a support helpdesk (Users, Tickets, Comments, later 
 ## Stack
 
 - **Spring Boot 4.1.1**, **Java 25**, Maven (use the bundled `./mvnw` wrapper).
-- Dependencies: Spring Web MVC (`spring-boot-starter-webmvc`), Spring Data JPA, Bean Validation, Actuator, DevTools, and H2 (in-memory, runtime scope) with the H2 console module (`spring-boot-h2console`).
+- Dependencies: Spring Web MVC (`spring-boot-starter-webmvc`), Spring Data JPA, Bean Validation, Actuator, DevTools, and the PostgreSQL driver. Tests use Testcontainers 2.x (`testcontainers-postgresql`, class `org.testcontainers.postgresql.PostgreSQLContainer`; the 1.x package names don't apply).
 - Spring Boot 4 splits starters into finer modules, and each has its own test starter (`spring-boot-starter-webmvc-test`, `spring-boot-starter-data-jpa-test`, etc.). When you add a starter, also add its matching `-test` starter if tests need its slices (`@WebMvcTest`, `@DataJpaTest`). Spring Boot 2/3 starter names (e.g. `spring-boot-starter-web`) don't apply here.
 - `pom.xml` contains empty `<licenses>`, `<developers>`, and `<scm>` elements on purpose. They block inheritance from the parent POM, so don't remove them.
 
 ## Commands
 
 ```bash
+docker compose up -d                   # start Postgres (required before running the app)
+docker compose down                    # stop it (data kept in the pgdata volume; add -v to wipe)
 ./mvnw spring-boot:run                 # run the app (port 8080 by default)
 ./mvnw test                            # run all tests
 ./mvnw test -Dtest=TicketControllerTests              # run a single test class
@@ -62,10 +64,12 @@ This is a learning project: a support helpdesk (Users, Tickets, Comments, later 
 ./mvnw spring-boot:build-image         # build an OCI image
 ```
 
-No linter or formatter is configured.
+No linter or formatter is configured. Tests need Docker running (OrbStack is installed), but not `docker compose`. Testcontainers starts its own Postgres.
 
 ## Configuration
 
-Config lives in `src/main/resources/application.properties`. The database is in-memory H2 (`jdbc:h2:mem:helpdesk`), so data is lost on restart. Hibernate creates the schema from the entities until Flyway arrives in roadmap stage 2. The H2 console is at `/h2-console` (user `sa`, empty password), and the SQL Hibernate generates is logged at debug level.
+Config lives in `src/main/resources/application.properties`. The app connects to Postgres 18 from `compose.yaml` (database, user and password are all `helpdesk`). Override the connection with the `DB_URL`, `DB_USERNAME` and `DB_PASSWORD` environment variables. Hibernate currently creates the schema (`ddl-auto=update`), and the SQL it generates is logged at debug level. To query the database directly: `docker compose exec postgres psql -U helpdesk -d helpdesk`.
+
+Tests that need a database `@Import(TestcontainersConfiguration.class)`. Its `@ServiceConnection` Postgres container overrides `spring.datasource.*`, so tests never touch the Compose database. `@WebMvcTest` and plain unit tests don't need it.
 
 When starting the app to test changes, check whether port 8080 is already in use (the user may have their own instance running). Use a different port, e.g. `-Dspring-boot.run.arguments=--server.port=18080`, and stop only the process you started.

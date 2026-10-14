@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.assertj.MockMvcTester;
@@ -13,10 +14,11 @@ import org.springframework.test.web.servlet.assertj.MvcTestResult;
 
 import com.jayway.jsonpath.JsonPath;
 
-// End-to-end test: the whole application (controllers, services, JPA, H2) with
+// End-to-end test: the whole application (controllers, services, JPA, Postgres) with
 // nothing mocked, walking through a typical ticket's life. Slower than the slice
 // tests, so keep these few and focused on how the pieces fit together.
 @SpringBootTest
+@Import(TestcontainersConfiguration.class)
 @AutoConfigureMockMvc
 class HelpdeskFlowTests {
 
