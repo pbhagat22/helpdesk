@@ -32,6 +32,11 @@ public class User {
 	@Column(nullable = false, length = 20)
 	private Role role;
 
+	// A BCrypt hash such as "{bcrypt}$2a$10$...", never the plain password.
+	// The "{bcrypt}" prefix tells Spring Security which algorithm produced it.
+	@Column(nullable = false, length = 100)
+	private String passwordHash;
+
 	@CreationTimestamp
 	@Column(nullable = false, updatable = false)
 	private Instant createdAt;
@@ -40,10 +45,11 @@ public class User {
 	protected User() {
 	}
 
-	public User(String email, String name, Role role) {
+	public User(String email, String name, Role role, String passwordHash) {
 		this.email = email;
 		this.name = name;
 		this.role = role;
+		this.passwordHash = passwordHash;
 	}
 
 	public Long getId() {
@@ -72,6 +78,10 @@ public class User {
 
 	public void setRole(Role role) {
 		this.role = role;
+	}
+
+	public String getPasswordHash() {
+		return passwordHash;
 	}
 
 	public Instant getCreatedAt() {

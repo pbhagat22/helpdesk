@@ -34,8 +34,8 @@ class TicketRepositoryTests {
 
 	@BeforeEach
 	void setUp() {
-		customer = entityManager.persist(new User("alice@example.com", "Alice", Role.CUSTOMER));
-		agent = entityManager.persist(new User("bob@example.com", "Bob", Role.AGENT));
+		customer = entityManager.persist(new User("alice@example.com", "Alice", Role.CUSTOMER, "{noop}unused"));
+		agent = entityManager.persist(new User("bob@example.com", "Bob", Role.AGENT, "{noop}unused"));
 	}
 
 	@Test

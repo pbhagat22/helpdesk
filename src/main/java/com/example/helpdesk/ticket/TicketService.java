@@ -30,8 +30,8 @@ public class TicketService {
 	}
 
 	@Transactional
-	public TicketResponse create(CreateTicketRequest request) {
-		User reporter = findUser(request.reporterId());
+	public TicketResponse create(CreateTicketRequest request, Long reporterId) {
+		User reporter = findUser(reporterId);
 		Ticket ticket = tickets
 			.save(new Ticket(request.title(), request.description(), request.priority(), reporter));
 		return TicketResponse.from(ticket);
@@ -87,9 +87,9 @@ public class TicketService {
 	}
 
 	@Transactional
-	public CommentResponse addComment(Long ticketId, CreateCommentRequest request) {
+	public CommentResponse addComment(Long ticketId, CreateCommentRequest request, Long authorId) {
 		Ticket ticket = findTicket(ticketId);
-		User author = findUser(request.authorId());
+		User author = findUser(authorId);
 		return CommentResponse.from(comments.save(new Comment(ticket, author, request.body())));
 	}
 

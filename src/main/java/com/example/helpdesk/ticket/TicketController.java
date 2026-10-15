@@ -3,6 +3,7 @@ package com.example.helpdesk.ticket;
 import java.util.List;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -12,6 +13,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+
+import com.example.helpdesk.security.HelpdeskUserDetails;
 
 import jakarta.validation.Valid;
 
@@ -27,8 +30,9 @@ public class TicketController {
 
 	@PostMapping
 	@ResponseStatus(HttpStatus.CREATED)
-	public TicketResponse create(@Valid @RequestBody CreateTicketRequest request) {
-		return ticketService.create(request);
+	public TicketResponse create(@Valid @RequestBody CreateTicketRequest request,
+			@AuthenticationPrincipal HelpdeskUserDetails me) {
+		return ticketService.create(request, me.getId());
 	}
 
 	// GET /api/tickets?status=OPEN&assigneeId=2 (both filters optional)
@@ -55,8 +59,9 @@ public class TicketController {
 
 	@PostMapping("/{id}/comments")
 	@ResponseStatus(HttpStatus.CREATED)
-	public CommentResponse addComment(@PathVariable Long id, @Valid @RequestBody CreateCommentRequest request) {
-		return ticketService.addComment(id, request);
+	public CommentResponse addComment(@PathVariable Long id, @Valid @RequestBody CreateCommentRequest request,
+			@AuthenticationPrincipal HelpdeskUserDetails me) {
+		return ticketService.addComment(id, request, me.getId());
 	}
 
 }

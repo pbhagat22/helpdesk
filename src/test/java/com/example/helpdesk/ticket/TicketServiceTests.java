@@ -42,7 +42,7 @@ class TicketServiceTests {
 
 	@BeforeEach
 	void setUp() {
-		customer = new User("alice@example.com", "Alice", Role.CUSTOMER);
+		customer = new User("alice@example.com", "Alice", Role.CUSTOMER, "{noop}unused");
 		ticket = new Ticket("Can't log in", "Password reset fails", Priority.HIGH, customer);
 	}
 
@@ -59,7 +59,7 @@ class TicketServiceTests {
 
 	@Test
 	void updateAssignsTicketToAgent() {
-		User agent = new User("bob@example.com", "Bob", Role.AGENT);
+		User agent = new User("bob@example.com", "Bob", Role.AGENT, "{noop}unused");
 		given(tickets.findById(1L)).willReturn(Optional.of(ticket));
 		given(users.findById(2L)).willReturn(Optional.of(agent));
 
@@ -82,7 +82,7 @@ class TicketServiceTests {
 	void addCommentFailsForMissingTicket() {
 		given(tickets.findById(99L)).willReturn(Optional.empty());
 
-		assertThatThrownBy(() -> ticketService.addComment(99L, new CreateCommentRequest("Hello", 1L)))
+		assertThatThrownBy(() -> ticketService.addComment(99L, new CreateCommentRequest("Hello"), 1L))
 			.isInstanceOf(NotFoundException.class)
 			.hasMessage("Ticket 99 not found");
 	}

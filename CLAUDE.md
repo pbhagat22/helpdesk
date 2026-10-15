@@ -4,20 +4,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Architecture
 
-The code is organized by feature package under `com.example.helpdesk`: `user`, `ticket` (tickets and comments) and `common` (exceptions and the global error handler). Each feature is layered Controller → Service → Repository:
+The code is organized by feature package under `com.example.helpdesk`: `user`, `ticket` (tickets and comments), `security` and `common` (exceptions and the global error handler). Each feature is layered Controller → Service → Repository:
 
 - **Controllers** only handle HTTP. They take and return DTO records (`Create*Request`, `Update*Request`, `*Response`) and never expose JPA entities. Request bodies are checked with `@Valid` against Bean Validation annotations on the request records.
 - **Services** own the transactions (`@Transactional(readOnly = true)` at class level, overridden on write methods) and convert entities to DTOs *inside* the transaction. `spring.jpa.open-in-view=false` is set, so lazy relationships read outside a service method throw `LazyInitializationException` instead of running hidden queries.
 - **Repositories** are Spring Data interfaces using derived queries. Ticket and comment list queries use `@EntityGraph` to fetch `reporter`, `assignee` or `author` in the same query, which avoids N+1 queries. Keep this when adding list queries.
 - **Entity relationships** are `@ManyToOne(fetch = LAZY)` and one-directional. Comment → Ticket has no collection on `Ticket`; comments are loaded with `CommentRepository`.
 - **Errors:** services throw `NotFoundException` (404), `ConflictException` (409) or `BadRequestException` (400, for business rules) from `common`. `GlobalExceptionHandler` maps them, plus validation and Spring MVC errors, to RFC 9457 `ProblemDetail` JSON. Validation failures add an `errors` field→message map. Don't use `@ResponseStatus` on exceptions or return error bodies from controllers.
-- **No authentication yet:** `reporterId` and `authorId` come from the request body until Spring Security is added (roadmap stage 4).
+- **Security** (`security` package): stateless HTTP Basic with CSRF off and no session. Users log in with email and password, and `users.password_hash` stores a `{bcrypt}` hash from the delegating `PasswordEncoder`. `HelpdeskUserDetails` is the principal and carries the user's id and role. Controllers take `@AuthenticationPrincipal HelpdeskUserDetails me` and pass `me.getId()` to services, so who is acting (reporter, author) always comes from the login, never from the request body. `SecurityConfig` makes `POST /api/auth/register` (self sign-up as CUSTOMER), `/actuator/health/**` and `/error` public, and everything else requires authentication. Role-based rules aren't enforced yet (roadmap stage 4, step 2).
 
 **Tests**, in `src/test/java`, mirror the main packages:
 - `*ServiceTests`: plain Mockito unit tests with no Spring context.
-- `*ControllerTests`: `@WebMvcTest` with a `@MockitoBean` service and `MockMvcTester` (AssertJ style).
+- `*ControllerTests`: `@WebMvcTest` with a `@MockitoBean` service and `MockMvcTester` (AssertJ style). They `@Import(SecurityConfig.class)` so the real rules apply (a slice test doesn't pick up `@Configuration` classes on its own), and run requests as a user with `.with(user(new HelpdeskUserDetails(...)))`.
 - `*RepositoryTests`: `@DataJpaTest` with `TestEntityManager`, against Testcontainers Postgres.
-- `HelpdeskFlowTests`: one end-to-end `@SpringBootTest` + `@AutoConfigureMockMvc` test with nothing mocked.
+- `HelpdeskFlowTests`: end-to-end `@SpringBootTest` + `@AutoConfigureMockMvc` tests with nothing mocked. Users register and log in for real with `.with(httpBasic(email, password))`.
 
 In Spring Boot 4 the test annotations live in per-module packages, e.g. `org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest` and `org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest`.
 
