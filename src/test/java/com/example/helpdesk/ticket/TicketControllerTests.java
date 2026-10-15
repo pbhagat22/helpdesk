@@ -33,6 +33,9 @@ class TicketControllerTests {
 	private static final HelpdeskUserDetails alice = new HelpdeskUserDetails(1L, "alice@example.com", "unused",
 			Role.CUSTOMER);
 
+	private static final HelpdeskUserDetails bob = new HelpdeskUserDetails(2L, "bob@example.com", "unused",
+			Role.AGENT);
+
 	@Autowired
 	private MockMvcTester mvc;
 
@@ -66,7 +69,11 @@ class TicketControllerTests {
 		assertThat(mvc.post().uri("/api/tickets").contentType(MediaType.APPLICATION_JSON).content("""
 				{"title": "Can't log in", "description": "Password reset fails", "priority": "HIGH"}
 				"""))
-			.hasStatus(HttpStatus.UNAUTHORIZED);
+			.hasStatus(HttpStatus.UNAUTHORIZED)
+			.hasHeader("WWW-Authenticate", "Basic realm=\"helpdesk\"")
+			.bodyJson()
+			.extractingPath("$.detail")
+			.isEqualTo("Authentication required");
 		verifyNoInteractions(ticketService);
 	}
 
@@ -82,7 +89,7 @@ class TicketControllerTests {
 
 	@Test
 	void listPassesFiltersToService() {
-		given(ticketService.list(TicketStatus.OPEN, 2L)).willReturn(List.of(ticket(TicketStatus.OPEN)));
+		given(ticketService.list(eq(TicketStatus.OPEN), eq(2L), any())).willReturn(List.of(ticket(TicketStatus.OPEN)));
 
 		assertThat(mvc.get().uri("/api/tickets?status=OPEN&assigneeId=2").with(user(alice)))
 			.hasStatus(HttpStatus.OK)
@@ -98,7 +105,7 @@ class TicketControllerTests {
 
 	@Test
 	void getReturns404ForMissingTicket() {
-		given(ticketService.get(99L)).willThrow(new NotFoundException("Ticket", 99L));
+		given(ticketService.get(eq(99L), any())).willThrow(new NotFoundException("Ticket", 99L));
 
 		assertThat(mvc.get().uri("/api/tickets/99").with(user(alice)))
 			.hasStatus(HttpStatus.NOT_FOUND)
@@ -112,7 +119,7 @@ class TicketControllerTests {
 		given(ticketService.update(eq(1L), any()))
 			.willThrow(new BadRequestException("Tickets can only be assigned to agents or admins"));
 
-		assertThat(mvc.patch().uri("/api/tickets/1").with(user(alice)).contentType(MediaType.APPLICATION_JSON).content("""
+		assertThat(mvc.patch().uri("/api/tickets/1").with(user(bob)).contentType(MediaType.APPLICATION_JSON).content("""
 				{"assigneeId": 1}
 				"""))
 			.hasStatus(HttpStatus.BAD_REQUEST)
@@ -122,8 +129,34 @@ class TicketControllerTests {
 	}
 
 	@Test
+	void updateIsForbiddenForCustomers() {
+		assertThat(mvc.patch().uri("/api/tickets/1").with(user(alice)).contentType(MediaType.APPLICATION_JSON).content("""
+				{"status": "CLOSED"}
+				"""))
+			.hasStatus(HttpStatus.FORBIDDEN)
+			.bodyJson()
+			.extractingPath("$.detail")
+			.isEqualTo("You don't have permission to do this");
+		// @PreAuthorize stops the call before the controller method (and the service) runs.
+		verifyNoInteractions(ticketService);
+	}
+
+	@Test
+	void updateIsAllowedForAgents() {
+		given(ticketService.update(eq(1L), any())).willReturn(ticket(TicketStatus.CLOSED));
+
+		assertThat(mvc.patch().uri("/api/tickets/1").with(user(bob)).contentType(MediaType.APPLICATION_JSON).content("""
+				{"status": "CLOSED"}
+				"""))
+			.hasStatus(HttpStatus.OK)
+			.bodyJson()
+			.extractingPath("$.status")
+			.isEqualTo("CLOSED");
+	}
+
+	@Test
 	void addCommentUsesLoggedInUserAsAuthor() {
-		given(ticketService.addComment(eq(1L), any(), eq(1L)))
+		given(ticketService.addComment(eq(1L), any(), any()))
 			.willReturn(new CommentResponse(5L, 1L, aliceResponse, "Still broken", Instant.now()));
 
 		assertThat(mvc.post().uri("/api/tickets/1/comments").with(user(alice)).contentType(MediaType.APPLICATION_JSON).content("""

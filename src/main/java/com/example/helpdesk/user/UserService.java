@@ -33,6 +33,16 @@ public class UserService {
 		return createUser(request.email(), request.name(), request.role(), request.password());
 	}
 
+	// Returns true if the admin was created, false if a user with that email already exists.
+	@Transactional
+	public boolean createAdminIfMissing(String email, String password) {
+		if (users.existsByEmail(email)) {
+			return false;
+		}
+		createUser(email, "Administrator", Role.ADMIN, password);
+		return true;
+	}
+
 	public List<UserResponse> list() {
 		return users.findAll().stream().map(UserResponse::from).toList();
 	}

@@ -30,6 +30,10 @@ services:
       DB_URL: jdbc:postgresql://postgres:5432/helpdesk
       DB_USERNAME: helpdesk
       DB_PASSWORD: helpdesk
+      # First admin account, created at startup if missing. Local development only;
+      # a real deployment gets these from a secret store, never from a committed file.
+      HELPDESK_ADMIN_EMAIL: admin@example.com
+      HELPDESK_ADMIN_PASSWORD: admin-password
     ports:
       - "${APP_PORT:-8080}:8080"
     depends_on:

@@ -39,23 +39,43 @@ class TicketRepositoryTests {
 	}
 
 	@Test
-	void findsTicketsByStatus() {
+	void searchWithoutFiltersReturnsAllNewestFirst() {
+		Ticket older = entityManager.persist(new Ticket("Older", "First one", Priority.LOW, customer));
+		Ticket newer = entityManager.persist(new Ticket("Newer", "Second one", Priority.LOW, customer));
+
+		assertThat(tickets.search(null, null, null)).containsExactly(newer, older);
+	}
+
+	@Test
+	void searchFiltersByStatus() {
 		Ticket open = entityManager.persist(new Ticket("Can't log in", "Password reset fails", Priority.HIGH, customer));
 		Ticket resolved = new Ticket("Typo on invoice", "Wrong company name", Priority.LOW, customer);
 		resolved.setStatus(TicketStatus.RESOLVED);
 		entityManager.persist(resolved);
 
-		assertThat(tickets.findByStatusOrderByCreatedAtDesc(TicketStatus.OPEN)).containsExactly(open);
+		assertThat(tickets.search(TicketStatus.OPEN, null, null)).containsExactly(open);
 	}
 
 	@Test
-	void findsTicketsAssignedToAgent() {
+	void searchFiltersByAssignee() {
 		Ticket assigned = new Ticket("Can't log in", "Password reset fails", Priority.HIGH, customer);
 		assigned.setAssignee(agent);
 		entityManager.persist(assigned);
 		entityManager.persist(new Ticket("Unassigned", "Nobody has this yet", Priority.LOW, customer));
 
-		assertThat(tickets.findByAssigneeIdOrderByCreatedAtDesc(agent.getId())).containsExactly(assigned);
+		assertThat(tickets.search(null, agent.getId(), null)).containsExactly(assigned);
+	}
+
+	@Test
+	void searchFiltersByReporterAndStatusTogether() {
+		User otherCustomer = entityManager.persist(new User("carol@example.com", "Carol", Role.CUSTOMER, "{noop}unused"));
+		Ticket mine = entityManager.persist(new Ticket("Mine", "Alice's ticket", Priority.LOW, customer));
+		entityManager.persist(new Ticket("Theirs", "Carol's ticket", Priority.LOW, otherCustomer));
+		Ticket mineResolved = new Ticket("Mine, done", "Alice's old ticket", Priority.LOW, customer);
+		mineResolved.setStatus(TicketStatus.RESOLVED);
+		entityManager.persist(mineResolved);
+
+		assertThat(tickets.search(TicketStatus.OPEN, null, customer.getId())).containsExactly(mine);
 	}
 
 	@Test

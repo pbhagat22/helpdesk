@@ -11,6 +11,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -40,6 +42,22 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 	@ExceptionHandler(BadRequestException.class)
 	ProblemDetail handleBadRequest(BadRequestException ex) {
 		return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+	}
+
+	// 401: not logged in or wrong credentials. Deliberately vague, so the response doesn't
+	// reveal whether the email exists. The WWW-Authenticate header tells clients how to log in.
+	@ExceptionHandler(AuthenticationException.class)
+	ResponseEntity<ProblemDetail> handleAuthentication(AuthenticationException ex) {
+		return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+			.header(HttpHeaders.WWW_AUTHENTICATE, "Basic realm=\"helpdesk\"")
+			.body(ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, "Authentication required"));
+	}
+
+	// 403: logged in, but the user's role isn't allowed to do this (@PreAuthorize).
+	// Without this handler, the catch-all below would turn it into a 500.
+	@ExceptionHandler(AccessDeniedException.class)
+	ProblemDetail handleAccessDenied(AccessDeniedException ex) {
+		return ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "You don't have permission to do this");
 	}
 
 	// Safety net for unique constraints the service didn't check first

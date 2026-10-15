@@ -3,6 +3,7 @@ package com.example.helpdesk.ticket;
 import java.util.List;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -18,6 +19,8 @@ import com.example.helpdesk.security.HelpdeskUserDetails;
 
 import jakarta.validation.Valid;
 
+// Every endpoint needs a logged-in user (SecurityConfig). Customers only see their own
+// tickets; that check is in TicketService because it depends on the ticket's data.
 @RestController
 @RequestMapping("/api/tickets")
 public class TicketController {
@@ -38,30 +41,33 @@ public class TicketController {
 	// GET /api/tickets?status=OPEN&assigneeId=2 (both filters optional)
 	@GetMapping
 	public List<TicketResponse> list(@RequestParam(required = false) TicketStatus status,
-			@RequestParam(required = false) Long assigneeId) {
-		return ticketService.list(status, assigneeId);
+			@RequestParam(required = false) Long assigneeId, @AuthenticationPrincipal HelpdeskUserDetails me) {
+		return ticketService.list(status, assigneeId, me);
 	}
 
 	@GetMapping("/{id}")
-	public TicketResponse get(@PathVariable Long id) {
-		return ticketService.get(id);
+	public TicketResponse get(@PathVariable Long id, @AuthenticationPrincipal HelpdeskUserDetails me) {
+		return ticketService.get(id, me);
 	}
 
+	// Changing status, priority or assignee is staff work. @PreAuthorize is checked
+	// before the method runs; a customer gets 403.
 	@PatchMapping("/{id}")
+	@PreAuthorize("hasAnyRole('AGENT', 'ADMIN')")
 	public TicketResponse update(@PathVariable Long id, @RequestBody UpdateTicketRequest request) {
 		return ticketService.update(id, request);
 	}
 
 	@GetMapping("/{id}/comments")
-	public List<CommentResponse> listComments(@PathVariable Long id) {
-		return ticketService.listComments(id);
+	public List<CommentResponse> listComments(@PathVariable Long id, @AuthenticationPrincipal HelpdeskUserDetails me) {
+		return ticketService.listComments(id, me);
 	}
 
 	@PostMapping("/{id}/comments")
 	@ResponseStatus(HttpStatus.CREATED)
 	public CommentResponse addComment(@PathVariable Long id, @Valid @RequestBody CreateCommentRequest request,
 			@AuthenticationPrincipal HelpdeskUserDetails me) {
-		return ticketService.addComment(id, request, me.getId());
+		return ticketService.addComment(id, request, me);
 	}
 
 }

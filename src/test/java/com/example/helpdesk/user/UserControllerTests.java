@@ -33,6 +33,9 @@ class UserControllerTests {
 	private static final HelpdeskUserDetails alice = new HelpdeskUserDetails(1L, "alice@example.com", "unused",
 			Role.CUSTOMER);
 
+	private static final HelpdeskUserDetails admin = new HelpdeskUserDetails(9L, "admin@example.com", "unused",
+			Role.ADMIN);
+
 	@Autowired
 	private MockMvcTester mvc;
 
@@ -87,7 +90,7 @@ class UserControllerTests {
 
 	@Test
 	void createReturns400WithFieldErrorsForInvalidInput() {
-		assertThat(mvc.post().uri("/api/users").with(user(alice)).contentType(MediaType.APPLICATION_JSON).content("""
+		assertThat(mvc.post().uri("/api/users").with(user(admin)).contentType(MediaType.APPLICATION_JSON).content("""
 				{"email": "not-an-email", "name": "", "role": null, "password": ""}
 				"""))
 			.hasStatus(HttpStatus.BAD_REQUEST)
@@ -101,10 +104,24 @@ class UserControllerTests {
 	}
 
 	@Test
+	void createIsForbiddenForNonAdmins() {
+		assertThat(mvc.post().uri("/api/users").with(user(alice)).contentType(MediaType.APPLICATION_JSON).content("""
+				{"email": "bob@example.com", "name": "Bob", "role": "AGENT", "password": "correct-horse"}
+				"""))
+			.hasStatus(HttpStatus.FORBIDDEN);
+		verifyNoInteractions(userService);
+	}
+
+	@Test
+	void listIsForbiddenForCustomers() {
+		assertThat(mvc.get().uri("/api/users").with(user(alice))).hasStatus(HttpStatus.FORBIDDEN);
+	}
+
+	@Test
 	void createReturns409ForDuplicateEmail() {
 		given(userService.create(any())).willThrow(new ConflictException("Email bob@example.com is already registered"));
 
-		assertThat(mvc.post().uri("/api/users").with(user(alice)).contentType(MediaType.APPLICATION_JSON).content("""
+		assertThat(mvc.post().uri("/api/users").with(user(admin)).contentType(MediaType.APPLICATION_JSON).content("""
 				{"email": "bob@example.com", "name": "Bob", "role": "AGENT", "password": "correct-horse"}
 				"""))
 			.hasStatus(HttpStatus.CONFLICT)
