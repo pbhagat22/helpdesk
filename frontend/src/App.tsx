@@ -1,9 +1,11 @@
 import { createBrowserRouter, Navigate, Outlet, RouterProvider } from 'react-router'
 import { useAuth } from './auth'
 import { Layout } from './components/Layout'
-import { HomePage } from './pages/HomePage'
 import { LoginPage } from './pages/LoginPage'
+import { NewTicketPage } from './pages/NewTicketPage'
 import { RegisterPage } from './pages/RegisterPage'
+import { TicketDetailPage } from './pages/TicketDetailPage'
+import { TicketListPage } from './pages/TicketListPage'
 
 // Pages under this route need a logged-in user; everyone else is sent to /login.
 function RequireAuth() {
@@ -23,7 +25,11 @@ const router = createBrowserRouter([
     children: [
       {
         element: <Layout />,
-        children: [{ path: '/', element: <HomePage /> }],
+        children: [
+          { path: '/', element: <TicketListPage /> },
+          { path: '/tickets/new', element: <NewTicketPage /> },
+          { path: '/tickets/:id', element: <TicketDetailPage /> },
+        ],
       },
     ],
   },

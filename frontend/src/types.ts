@@ -10,6 +10,32 @@ export interface User {
   createdAt: string
 }
 
+export type TicketStatus = 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED'
+export type Priority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'
+
+export const TICKET_STATUSES: TicketStatus[] = ['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED']
+export const PRIORITIES: Priority[] = ['LOW', 'MEDIUM', 'HIGH', 'URGENT']
+
+export interface Ticket {
+  id: number
+  title: string
+  description: string
+  status: TicketStatus
+  priority: Priority
+  reporter: User
+  assignee: User | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface Comment {
+  id: number
+  ticketId: number
+  author: User
+  body: string
+  createdAt: string
+}
+
 export interface TokenResponse {
   accessToken: string
   tokenType: string
