@@ -42,6 +42,14 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    # "Healthy" once Spring Boot reports UP, so `up --wait` returns only when the API
+    # answers. The JRE image has no curl, so bash's /dev/tcp sends a raw HTTP request.
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/8080 && printf 'GET /actuator/health HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
+      interval: 5s
+      timeout: 3s
+      start_period: 30s
+      retries: 10
 
 volumes:
   pgdata:

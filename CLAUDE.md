@@ -30,6 +30,21 @@ The code is organized by feature package under `com.example.helpdesk`: `user`, `
 
 In Spring Boot 4 the test annotations live in per-module packages, e.g. `org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest` and `org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest`.
 
+## Frontend
+
+`frontend/` is a React 19 + TypeScript SPA built with Vite 8 and React Router 8, with no UI library and hand-written CSS in `src/index.css`. Run commands from `frontend/`:
+
+```bash
+npm install          # after cloning or when package.json changes
+npm run dev          # dev server on http://localhost:5173, proxies /api to localhost:8080 (backend must be running)
+npm run build        # type-check (tsc --noEmit) + production build into frontend/dist
+```
+
+- `src/api.ts`: every backend call goes through `api<T>(path, {method, body})`. It adds the bearer token from localStorage (`helpdesk.token`), throws `ApiError` carrying the ProblemDetail (`problem.errors` holds field errors) for non-2xx responses, and clears the token and logs out on a 401 for an authenticated request.
+- `src/auth.tsx`: `AuthProvider` / `useAuth()` hold the current user (`undefined` while a saved token is checked with `/users/me`, `null` when logged out) and `login`, `register`, `logout`.
+- `src/App.tsx`: routes. Pages that need a login sit under `RequireAuth` and use `components/Layout`.
+- `src/types.ts` mirrors the backend's response records. Update it when a DTO changes.
+
 ## Roadmap
 
 This is a learning project: a support helpdesk (Users, Tickets, Comments, later KB articles) built up in stages, one new skill per stage. Check `git log` to see which stage is done before continuing.

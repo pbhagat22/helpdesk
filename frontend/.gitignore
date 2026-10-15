@@ -1,0 +1,4 @@
+# Installed packages (recreated by `npm install` from package-lock.json)
+node_modules/
+# Build output
+dist/

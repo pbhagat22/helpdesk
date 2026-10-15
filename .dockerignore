@@ -1,5 +1,7 @@
 # Files Docker never sends to the build (smaller, faster builds; no local junk or secrets)
 target/
+frontend/node_modules/
+frontend/dist/
 .git/
 .gitignore
 .gitattributes
