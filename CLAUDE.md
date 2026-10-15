@@ -98,6 +98,8 @@ The `app` Compose service uses a profile, so plain `docker compose up -d` starts
 
 The [Dockerfile](Dockerfile) is multi-stage. A Node stage builds the React UI (see Frontend), then a JDK stage runs `./mvnw package -DskipTests` (tests need Docker, which isn't available inside a build) with a BuildKit cache mount for `~/.m2`, then extracts Boot's jar layers (`-Djarmode=tools extract --layers --launcher`). The JRE stage copies the layers in order, from least to most frequently changing, runs as the non-root `spring` user, and starts with `JarLauncher`. Inside Compose the app reaches the database through `DB_URL=jdbc:postgresql://postgres:5432/helpdesk` (the service name, not `localhost`).
 
+**CI** ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs on pushes to `main` and on pull requests. `backend` runs `./mvnw -B verify` (Testcontainers uses the runner's Docker) and uploads the surefire reports on failure. `frontend` runs `npm ci && npm run build`. `docker` builds the image without pushing it (GitHub Actions layer cache), and only runs after both pass. Check runs with `gh run list` / `gh run view --log-failed`. The repo is private, so Actions minutes count against the free monthly quota.
+
 No linter or formatter is configured. Tests need Docker running (OrbStack is installed), but not `docker compose`. Testcontainers starts its own Postgres.
 
 ## Configuration
