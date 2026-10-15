@@ -22,10 +22,13 @@ The code is organized by feature package under `com.example.helpdesk`: `user`, `
 - **Security errors** (401/403) go through `SecurityProblemHandler`, which hands them to MVC's `handlerExceptionResolver`, so `GlobalExceptionHandler` renders them as ProblemDetail like everything else. It needs explicit `AuthenticationException` and `AccessDeniedException` handlers; without them the catch-all `Exception` handler would turn a `@PreAuthorize` denial into a 500.
 - **Bootstrap admin:** `AdminBootstrap` (an `ApplicationRunner`) creates an ADMIN at startup from `helpdesk.admin.email` and `helpdesk.admin.password` (`AdminProperties`, set with the `HELPDESK_ADMIN_EMAIL` and `HELPDESK_ADMIN_PASSWORD` environment variables) if that email doesn't exist. `compose.yaml` sets dev values for the `app` service, including `HELPDESK_JWT_SECRET`. With `spring-boot:run`, pass them as environment variables. Real credentials never go in committed files.
 
+- **Kafka events:** `TicketService` publishes a `TicketEvent` (`eventId`, `type` from `TicketEventType`, `ticketId`, `actorId`, `occurredAt`, a `details` string map) through Spring's `ApplicationEventPublisher` for every *real* change: created, status or priority changed (`from`/`to`), assigned, commented. Setting a field to its current value publishes nothing. `TicketEventPublisher` forwards events with `@TransactionalEventListener`, i.e. only after the DB commit, to the topic `helpdesk.ticket-events` (3 partitions, created at startup by a `NewTopic` bean). Events are JSON (`JacksonJsonSerializer`, no type headers), keyed by ticket id so each ticket's events stay in order. Send failures are logged, never thrown: the request still succeeds, and the producer gives up after `max.block.ms=3000`. Events can be lost if the app dies between commit and send; there's no transactional outbox, by design for now.
+
 **Tests**, in `src/test/java`, mirror the main packages:
 - `*ServiceTests`: plain Mockito unit tests with no Spring context.
 - `*ControllerTests`: `@WebMvcTest` with a `@MockitoBean` service and `MockMvcTester` (AssertJ style). They `@Import(SecurityConfig.class)` so the real rules apply (a slice test doesn't pick up `@Configuration` classes on its own), and run requests as a user with `.with(user(new HelpdeskUserDetails(...)))`.
 - `*RepositoryTests`: `@DataJpaTest` with `TestEntityManager`, against Testcontainers Postgres.
+- `HelpdeskFlowTests` and `HelpdeskApplicationTests` also `@Import(KafkaTestcontainersConfiguration.class)` (an `apache/kafka` container with `@ServiceConnection`). It's kept separate from the Postgres config so `@DataJpaTest` doesn't start Kafka. `HelpdeskFlowTests.readEventTypes` reads the topic with a throwaway consumer group to assert published events.
 - `HelpdeskFlowTests`: end-to-end `@SpringBootTest` + `@AutoConfigureMockMvc` tests with nothing mocked. Users register, log in at `/api/auth/login` for real, and send the bearer token (the `login(...)` helper returns a `RequestPostProcessor`). Controllers that need `TokenService` (`AuthController`) get it as a `@MockitoBean` in slice tests.
 
 In Spring Boot 4 the test annotations live in per-module packages, e.g. `org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest` and `org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest`.
@@ -75,15 +78,17 @@ This is a learning project: a support helpdesk (Users, Tickets, Comments, later 
 ## Stack
 
 - **Spring Boot 4.1.1**, **Java 25**, Maven (use the bundled `./mvnw` wrapper).
-- Dependencies: Spring Web MVC (`spring-boot-starter-webmvc`), Spring Data JPA, Bean Validation, Actuator, DevTools, the PostgreSQL driver, and Flyway (`spring-boot-starter-flyway` plus `flyway-database-postgresql`, which Flyway needs for Postgres support). Tests use Testcontainers 2.x (`testcontainers-postgresql`, class `org.testcontainers.postgresql.PostgreSQLContainer`; the 1.x package names don't apply).
+- Dependencies: Spring Web MVC (`spring-boot-starter-webmvc`), Spring Data JPA, Bean Validation, Actuator, DevTools, Spring for Apache Kafka (`spring-boot-starter-kafka`), the PostgreSQL driver, and Flyway (`spring-boot-starter-flyway` plus `flyway-database-postgresql`, which Flyway needs for Postgres support). Tests use Testcontainers 2.x (`testcontainers-postgresql`, class `org.testcontainers.postgresql.PostgreSQLContainer`; the 1.x package names don't apply).
 - Spring Boot 4 splits starters into finer modules, and each has its own test starter (`spring-boot-starter-webmvc-test`, `spring-boot-starter-data-jpa-test`, etc.). When you add a starter, also add its matching `-test` starter if tests need its slices (`@WebMvcTest`, `@DataJpaTest`). Spring Boot 2/3 starter names (e.g. `spring-boot-starter-web`) don't apply here.
 - `pom.xml` contains empty `<licenses>`, `<developers>`, and `<scm>` elements on purpose. They block inheritance from the parent POM, so don't remove them.
 
 ## Commands
 
 ```bash
-docker compose up -d                   # start Postgres (required before running the app)
-docker compose down                    # stop it (data kept in the pgdata volume; add -v to wipe)
+docker compose up -d                   # start Postgres + Kafka (required before running the app)
+docker compose down                    # stop them (data kept in the pgdata/kafkadata volumes; add -v to wipe)
+docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 \
+  --topic helpdesk.ticket-events --from-beginning --property print.key=true   # watch ticket events
 ./mvnw spring-boot:run                 # run the app (port 8080 by default)
 HELPDESK_ADMIN_EMAIL=admin@example.com HELPDESK_ADMIN_PASSWORD=admin-password ./mvnw spring-boot:run  # same, with a bootstrap admin
 ./mvnw test                            # run all tests
@@ -104,7 +109,7 @@ No linter or formatter is configured. Tests need Docker running (OrbStack is ins
 
 ## Configuration
 
-Config lives in `src/main/resources/application.properties`. The app connects to Postgres 18 from `compose.yaml` (database, user and password are all `helpdesk`). Override the connection with the `DB_URL`, `DB_USERNAME` and `DB_PASSWORD` environment variables. The SQL Hibernate runs is logged at debug level.
+Config lives in `src/main/resources/application.properties`. The app connects to Postgres 18 from `compose.yaml` (database, user and password are all `helpdesk`). Override the connection with the `DB_URL`, `DB_USERNAME` and `DB_PASSWORD` environment variables. Kafka (`apache/kafka:4.2.1`, single-node KRaft) is at `localhost:9092` from the host, overridden with `KAFKA_BOOTSTRAP_SERVERS`. Inside the Compose network it's `kafka:29092`, because Kafka advertises a separate listener per network. The SQL Hibernate runs is logged at debug level.
 
 **Schema changes go through Flyway** (`src/main/resources/db/migration`, Postgres SQL). Hibernate runs with `ddl-auto=validate`, so it never changes tables, and startup fails if an entity doesn't match the schema. To change an entity's columns, add a new `V<n>__description.sql` migration alongside the entity change. Never edit a migration that has already been applied. Enum columns are `varchar(20)` with `@Column(length = 20)` and no check constraints. Foreign key columns used in queries get an explicit index, because Postgres doesn't index them automatically. To query the database directly: `docker compose exec postgres psql -U helpdesk -d helpdesk`.
 

@@ -116,7 +116,7 @@ class TicketControllerTests {
 
 	@Test
 	void updateReturns400WhenBusinessRuleIsBroken() {
-		given(ticketService.update(eq(1L), any()))
+		given(ticketService.update(eq(1L), any(), any()))
 			.willThrow(new BadRequestException("Tickets can only be assigned to agents or admins"));
 
 		assertThat(mvc.patch().uri("/api/tickets/1").with(user(bob)).contentType(MediaType.APPLICATION_JSON).content("""
@@ -143,7 +143,7 @@ class TicketControllerTests {
 
 	@Test
 	void updateIsAllowedForAgents() {
-		given(ticketService.update(eq(1L), any())).willReturn(ticket(TicketStatus.CLOSED));
+		given(ticketService.update(eq(1L), any(), any())).willReturn(ticket(TicketStatus.CLOSED));
 
 		assertThat(mvc.patch().uri("/api/tickets/1").with(user(bob)).contentType(MediaType.APPLICATION_JSON).content("""
 				{"status": "CLOSED"}

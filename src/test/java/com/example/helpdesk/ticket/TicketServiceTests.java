@@ -11,9 +11,12 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Captor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.example.helpdesk.common.BadRequestException;
@@ -46,6 +49,13 @@ class TicketServiceTests {
 
 	@Mock
 	private UserRepository users;
+
+	@Mock
+	private ApplicationEventPublisher events;
+
+	// Captures the event passed to publishEvent so the test can inspect it.
+	@Captor
+	private ArgumentCaptor<TicketEvent> eventCaptor;
 
 	@InjectMocks
 	private TicketService ticketService;
@@ -104,7 +114,8 @@ class TicketServiceTests {
 	void updateChangesOnlyTheFieldsThatAreSet() {
 		given(tickets.findById(1L)).willReturn(Optional.of(ticket));
 
-		TicketResponse response = ticketService.update(1L, new UpdateTicketRequest(TicketStatus.RESOLVED, null, null));
+		TicketResponse response = ticketService.update(1L, new UpdateTicketRequest(TicketStatus.RESOLVED, null, null),
+				BOB);
 
 		assertThat(response.status()).isEqualTo(TicketStatus.RESOLVED);
 		assertThat(response.priority()).isEqualTo(Priority.HIGH);
@@ -112,14 +123,33 @@ class TicketServiceTests {
 	}
 
 	@Test
+	void updatePublishesOneEventPerRealChange() {
+		given(tickets.findById(1L)).willReturn(Optional.of(ticket));
+
+		// Status changes (OPEN → RESOLVED); priority is set to the value it already has (HIGH).
+		ticketService.update(1L, new UpdateTicketRequest(TicketStatus.RESOLVED, Priority.HIGH, null), BOB);
+
+		then(events).should().publishEvent(eventCaptor.capture());
+		then(events).shouldHaveNoMoreInteractions();
+		TicketEvent event = eventCaptor.getValue();
+		assertThat(event.type()).isEqualTo(TicketEventType.STATUS_CHANGED);
+		assertThat(event.actorId()).isEqualTo(BOB.getId());
+		assertThat(event.details()).containsEntry("from", "OPEN").containsEntry("to", "RESOLVED");
+	}
+
+	@Test
 	void updateAssignsTicketToAgent() {
 		User agent = new User("bob@example.com", "Bob", Role.AGENT, "{noop}unused");
+		ReflectionTestUtils.setField(agent, "id", 2L);
 		given(tickets.findById(1L)).willReturn(Optional.of(ticket));
 		given(users.findById(2L)).willReturn(Optional.of(agent));
 
-		TicketResponse response = ticketService.update(1L, new UpdateTicketRequest(null, null, 2L));
+		TicketResponse response = ticketService.update(1L, new UpdateTicketRequest(null, null, 2L), BOB);
 
 		assertThat(response.assignee().email()).isEqualTo("bob@example.com");
+		then(events).should().publishEvent(eventCaptor.capture());
+		assertThat(eventCaptor.getValue().type()).isEqualTo(TicketEventType.ASSIGNED);
+		assertThat(eventCaptor.getValue().details()).containsEntry("assigneeName", "Bob");
 	}
 
 	@Test
@@ -127,9 +157,10 @@ class TicketServiceTests {
 		given(tickets.findById(1L)).willReturn(Optional.of(ticket));
 		given(users.findById(1L)).willReturn(Optional.of(customer));
 
-		assertThatThrownBy(() -> ticketService.update(1L, new UpdateTicketRequest(null, null, 1L)))
+		assertThatThrownBy(() -> ticketService.update(1L, new UpdateTicketRequest(null, null, 1L), BOB))
 			.isInstanceOf(BadRequestException.class);
 		assertThat(ticket.getAssignee()).isNull();
+		then(events).shouldHaveNoInteractions();
 	}
 
 	@Test

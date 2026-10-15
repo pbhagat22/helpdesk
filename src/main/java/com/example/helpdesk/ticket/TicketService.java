@@ -1,7 +1,9 @@
 package com.example.helpdesk.ticket;
 
 import java.util.List;
+import java.util.Map;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,10 +30,16 @@ public class TicketService {
 
 	private final UserRepository users;
 
-	public TicketService(TicketRepository tickets, CommentRepository comments, UserRepository users) {
+	// Spring's in-process event bus. TicketEventPublisher forwards the events to Kafka after
+	// the transaction commits, so this service doesn't need to know about Kafka at all.
+	private final ApplicationEventPublisher events;
+
+	public TicketService(TicketRepository tickets, CommentRepository comments, UserRepository users,
+			ApplicationEventPublisher events) {
 		this.tickets = tickets;
 		this.comments = comments;
 		this.users = users;
+		this.events = events;
 	}
 
 	@Transactional
@@ -39,6 +47,8 @@ public class TicketService {
 		User reporter = findUser(reporterId);
 		Ticket ticket = tickets
 			.save(new Ticket(request.title(), request.description(), request.priority(), reporter));
+		events.publishEvent(TicketEvent.of(TicketEventType.CREATED, ticket.getId(), reporterId,
+				Map.of("title", ticket.getTitle(), "priority", ticket.getPriority().name())));
 		return TicketResponse.from(ticket);
 	}
 
@@ -55,13 +65,18 @@ public class TicketService {
 	// Only agents and admins get here (see TicketController), so no ownership check.
 	// No save() call needed: changes to an entity loaded inside a transaction
 	// are written to the database automatically when the transaction commits.
+	// Only real changes produce events: setting a field to the value it already has doesn't.
 	@Transactional
-	public TicketResponse update(Long id, UpdateTicketRequest request) {
+	public TicketResponse update(Long id, UpdateTicketRequest request, HelpdeskUserDetails me) {
 		Ticket ticket = findTicket(id);
-		if (request.status() != null) {
+		if (request.status() != null && request.status() != ticket.getStatus()) {
+			events.publishEvent(TicketEvent.of(TicketEventType.STATUS_CHANGED, id, me.getId(),
+					Map.of("from", ticket.getStatus().name(), "to", request.status().name())));
 			ticket.setStatus(request.status());
 		}
-		if (request.priority() != null) {
+		if (request.priority() != null && request.priority() != ticket.getPriority()) {
+			events.publishEvent(TicketEvent.of(TicketEventType.PRIORITY_CHANGED, id, me.getId(),
+					Map.of("from", ticket.getPriority().name(), "to", request.priority().name())));
 			ticket.setPriority(request.priority());
 		}
 		if (request.assigneeId() != null) {
@@ -69,7 +84,11 @@ public class TicketService {
 			if (assignee.getRole() == Role.CUSTOMER) {
 				throw new BadRequestException("Tickets can only be assigned to agents or admins");
 			}
-			ticket.setAssignee(assignee);
+			if (ticket.getAssignee() == null || !ticket.getAssignee().getId().equals(assignee.getId())) {
+				events.publishEvent(TicketEvent.of(TicketEventType.ASSIGNED, id, me.getId(),
+						Map.of("assigneeId", assignee.getId().toString(), "assigneeName", assignee.getName())));
+				ticket.setAssignee(assignee);
+			}
 		}
 		// Write the changes now so @UpdateTimestamp sets updatedAt before we build the response.
 		tickets.flush();
@@ -85,7 +104,10 @@ public class TicketService {
 	public CommentResponse addComment(Long ticketId, CreateCommentRequest request, HelpdeskUserDetails me) {
 		Ticket ticket = findVisibleTicket(ticketId, me);
 		User author = findUser(me.getId());
-		return CommentResponse.from(comments.save(new Comment(ticket, author, request.body())));
+		Comment comment = comments.save(new Comment(ticket, author, request.body()));
+		events.publishEvent(TicketEvent.of(TicketEventType.COMMENTED, ticketId, me.getId(),
+				Map.of("commentId", comment.getId().toString())));
+		return CommentResponse.from(comment);
 	}
 
 	// A customer asking for someone else's ticket gets 404, not 403: a 403 would

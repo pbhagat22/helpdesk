@@ -3,8 +3,20 @@ package com.example.helpdesk;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
+import org.apache.kafka.clients.consumer.Consumer;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.serialization.StringDeserializer;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -12,10 +24,12 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.test.web.servlet.assertj.MockMvcTester;
 import org.springframework.test.web.servlet.assertj.MvcTestResult;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
+import com.example.helpdesk.ticket.TicketEventPublisher;
 import com.jayway.jsonpath.JsonPath;
 
 // End-to-end test: the whole application (security, controllers, services, JPA, Postgres)
@@ -24,12 +38,16 @@ import com.jayway.jsonpath.JsonPath;
 // the slice tests, so keep these few and focused on how the pieces fit together.
 // The properties configure the bootstrap admin, as HELPDESK_ADMIN_* would in production.
 @SpringBootTest(properties = { "helpdesk.admin.email=admin@example.com", "helpdesk.admin.password=admin-password" })
-@Import(TestcontainersConfiguration.class)
+@Import({ TestcontainersConfiguration.class, KafkaTestcontainersConfiguration.class })
 @AutoConfigureMockMvc
 class HelpdeskFlowTests {
 
 	@Autowired
 	private MockMvcTester mvc;
+
+	// Spring Boot's Kafka consumer settings, pointing at the test container
+	@Autowired
+	private ConsumerFactory<?, ?> consumerFactory;
 
 	@Test
 	void ticketLifecycle() throws Exception {
@@ -143,6 +161,55 @@ class HelpdeskFlowTests {
 
 		assertThat(mvc.get().uri("/api/users/me").header("Authorization", "Bearer " + forged))
 			.hasStatus(HttpStatus.UNAUTHORIZED);
+	}
+
+	// Changes made through the API reach Kafka as events, in order, after each commit.
+	@Test
+	void ticketChangesArePublishedToKafka() throws Exception {
+		RequestPostProcessor admin = login("admin@example.com", "admin-password");
+		RequestPostProcessor hana = register("flow-hana@example.com", "Hana", "hana-password");
+		long ticketId = createAndGetId("/api/tickets", hana, """
+				{"title": "Laptop won't boot", "description": "Black screen", "priority": "HIGH"}
+				""");
+		long adminId = JsonPath.<Number>read(
+				mvc.get().uri("/api/users/me").with(admin).exchange().getResponse().getContentAsString(), "$.id")
+			.longValue();
+		assertThat(mvc.patch()
+			.uri("/api/tickets/{id}", ticketId)
+			.with(admin)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("""
+					{"status": "IN_PROGRESS", "assigneeId": %d}
+					""".formatted(adminId)))
+			.hasStatus(HttpStatus.OK);
+		createAndGetId("/api/tickets/" + ticketId + "/comments", admin, """
+				{"body": "Looking into it"}
+				""");
+
+		assertThat(readEventTypes(ticketId, 4)).containsExactly("CREATED", "STATUS_CHANGED", "ASSIGNED", "COMMENTED");
+	}
+
+	// Reads the topic from the beginning with a fresh consumer group, keeping the events for
+	// one ticket (the message key), until `count` have arrived or 15 seconds have passed.
+	private List<String> readEventTypes(long ticketId, int count) {
+		Map<String, Object> props = new HashMap<>(consumerFactory.getConfigurationProperties());
+		props.put(ConsumerConfig.GROUP_ID_CONFIG, "flow-test-" + UUID.randomUUID());
+		props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+		props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+		props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+		List<String> types = new ArrayList<>();
+		try (Consumer<String, String> consumer = new KafkaConsumer<>(props)) {
+			consumer.subscribe(List.of(TicketEventPublisher.TOPIC));
+			Instant deadline = Instant.now().plusSeconds(15);
+			while (types.size() < count && Instant.now().isBefore(deadline)) {
+				for (ConsumerRecord<String, String> record : consumer.poll(Duration.ofMillis(500))) {
+					if (record.key().equals(String.valueOf(ticketId))) {
+						types.add(JsonPath.read(record.value(), "$.type"));
+					}
+				}
+			}
+		}
+		return types;
 	}
 
 	// The React app (here a stand-in from src/test/resources/static) loads without a login,

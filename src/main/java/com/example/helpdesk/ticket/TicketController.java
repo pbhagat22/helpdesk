@@ -54,8 +54,9 @@ public class TicketController {
 	// before the method runs; a customer gets 403.
 	@PatchMapping("/{id}")
 	@PreAuthorize("hasAnyRole('AGENT', 'ADMIN')")
-	public TicketResponse update(@PathVariable Long id, @RequestBody UpdateTicketRequest request) {
-		return ticketService.update(id, request);
+	public TicketResponse update(@PathVariable Long id, @RequestBody UpdateTicketRequest request,
+			@AuthenticationPrincipal HelpdeskUserDetails me) {
+		return ticketService.update(id, request, me);
 	}
 
 	@GetMapping("/{id}/comments")
