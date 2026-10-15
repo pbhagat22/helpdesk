@@ -42,8 +42,12 @@ npm run build        # type-check (tsc --noEmit) + production build into fronten
 
 - `src/api.ts`: every backend call goes through `api<T>(path, {method, body})`. It adds the bearer token from localStorage (`helpdesk.token`), throws `ApiError` carrying the ProblemDetail (`problem.errors` holds field errors) for non-2xx responses, and clears the token and logs out on a 401 for an authenticated request.
 - `src/auth.tsx`: `AuthProvider` / `useAuth()` hold the current user (`undefined` while a saved token is checked with `/users/me`, `null` when logged out) and `login`, `register`, `logout`.
-- `src/App.tsx`: routes. Pages that need a login sit under `RequireAuth` and use `components/Layout`.
+- `src/App.tsx`: routes. Pages that need a login sit under `RequireAuth` and use `components/Layout`. Routes are `/` (ticket list: "My tickets" for customers, filterable queue for staff), `/tickets/new` and `/tickets/:id` (detail, comments, and staff-only status/priority/assignee controls).
+- `src/useApi.ts`: `useApi<T>(path)` loads data for a component (`{data, error, reload}`) and ignores stale responses. Use it for GETs; writes call `api()` directly and then `reload()`.
+- List filters live in the URL query (`useSearchParams`), not component state. Staff-only data (`/users`) is fetched in staff-only child components, because customers get 403 for it.
 - `src/types.ts` mirrors the backend's response records. Update it when a DTO changes.
+
+**How the UI is served:** in development, Vite (port 5173) serves the UI and proxies `/api`. In the Docker image, a `node:24-alpine` stage runs `npm ci && npm run build`, and the JDK stage copies `dist/` into `src/main/resources/static/` before `./mvnw package`, so the jar contains the UI and serves it on 8080 alongside the API. That folder is git-ignored and only populated inside the Docker build; a plain `./mvnw spring-boot:run` serves no UI. `SpaWebConfig` returns real static files, and returns `index.html` for any other non-`api/` path, so React Router deep links survive a reload. `SecurityConfig` requires authentication for `/api/**`, ADMIN for `/actuator/**` (except health), and permits everything else (the static UI). `src/test/resources/static/index.html` is a stand-in so `HelpdeskFlowTests` can test this.
 
 ## Roadmap
 
@@ -92,7 +96,7 @@ docker compose --profile app down            # stop both (plain `down` leaves th
 
 The `app` Compose service uses a profile, so plain `docker compose up -d` starts only Postgres for `spring-boot:run` development. Set `APP_PORT=18080` to publish the containerized app on another host port.
 
-The [Dockerfile](Dockerfile) is multi-stage. A JDK stage runs `./mvnw package -DskipTests` (tests need Docker, which isn't available inside a build) with a BuildKit cache mount for `~/.m2`, then extracts Boot's jar layers (`-Djarmode=tools extract --layers --launcher`). The JRE stage copies the layers in order, from least to most frequently changing, runs as the non-root `spring` user, and starts with `JarLauncher`. Inside Compose the app reaches the database through `DB_URL=jdbc:postgresql://postgres:5432/helpdesk` (the service name, not `localhost`).
+The [Dockerfile](Dockerfile) is multi-stage. A Node stage builds the React UI (see Frontend), then a JDK stage runs `./mvnw package -DskipTests` (tests need Docker, which isn't available inside a build) with a BuildKit cache mount for `~/.m2`, then extracts Boot's jar layers (`-Djarmode=tools extract --layers --launcher`). The JRE stage copies the layers in order, from least to most frequently changing, runs as the non-root `spring` user, and starts with `JarLauncher`. Inside Compose the app reaches the database through `DB_URL=jdbc:postgresql://postgres:5432/helpdesk` (the service name, not `localhost`).
 
 No linter or formatter is configured. Tests need Docker running (OrbStack is installed), but not `docker compose`. Testcontainers starts its own Postgres.
 

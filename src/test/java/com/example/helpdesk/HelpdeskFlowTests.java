@@ -145,6 +145,28 @@ class HelpdeskFlowTests {
 			.hasStatus(HttpStatus.UNAUTHORIZED);
 	}
 
+	// The React app (here a stand-in from src/test/resources/static) loads without a login,
+	// and browser-only routes like /tickets/5 get index.html so React Router can handle them.
+	@Test
+	void uiIsServedWithoutLoginIncludingDeepLinks() {
+		// Spring Boot answers "/" with a server-side forward to index.html (its "welcome page").
+		// MockMvc records forwards instead of following them, so check the forward itself.
+		assertThat(mvc.get().uri("/")).hasStatus(HttpStatus.OK).hasForwardedUrl("index.html");
+		assertThat(mvc.get().uri("/tickets/5")).hasStatus(HttpStatus.OK).bodyText().contains("test-spa");
+		assertThat(mvc.get().uri("/login")).hasStatus(HttpStatus.OK).bodyText().contains("test-spa");
+	}
+
+	@Test
+	void unknownApiPathsAre404NotTheUi() throws Exception {
+		RequestPostProcessor admin = login("admin@example.com", "admin-password");
+
+		assertThat(mvc.get().uri("/api/no-such-thing").with(admin)).hasStatus(HttpStatus.NOT_FOUND)
+			.bodyText()
+			.doesNotContain("test-spa");
+		// ...and the API still needs a login, even though the UI doesn't.
+		assertThat(mvc.get().uri("/api/tickets")).hasStatus(HttpStatus.UNAUTHORIZED);
+	}
+
 	// Signs up a customer and returns their login.
 	private RequestPostProcessor register(String email, String name, String password) throws Exception {
 		createAndGetId("/api/auth/register", null, """

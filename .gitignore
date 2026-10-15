@@ -1,5 +1,7 @@
 HELP.md
 target/
+# The built React UI is copied here only inside the Docker build; never commit it
+src/main/resources/static/
 .mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/

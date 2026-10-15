@@ -63,9 +63,14 @@ public class SecurityConfig {
 			// Spring's error page (so error responses aren't replaced by a 401)
 			.requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login").permitAll()
 			.requestMatchers("/actuator/health/**", "/error").permitAll()
-			// Everything else requires a logged-in user. Which roles may call what is
+			// The rest of the API requires a logged-in user. Which roles may call what is
 			// decided per endpoint with @PreAuthorize on the controller methods.
-			.anyRequest().authenticated())
+			.requestMatchers("/api/**").authenticated()
+			// Any other Actuator endpoint someone enables later: admins only
+			.requestMatchers("/actuator/**").hasRole("ADMIN")
+			// Everything else is the React app (HTML, JS, CSS). It must load before anyone
+			// has logged in, and contains no data: all data comes from the protected API.
+			.anyRequest().permitAll())
 			// Requests authenticate with "Authorization: Bearer <JWT>" from /api/auth/login.
 			// Spring checks the signature, expiry and issuer, then calls toAuthentication.
 			.oauth2ResourceServer(resourceServer -> resourceServer
