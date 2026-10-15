@@ -70,7 +70,7 @@ class TicketControllerTests {
 				{"title": "Can't log in", "description": "Password reset fails", "priority": "HIGH"}
 				"""))
 			.hasStatus(HttpStatus.UNAUTHORIZED)
-			.hasHeader("WWW-Authenticate", "Basic realm=\"helpdesk\"")
+			.hasHeader("WWW-Authenticate", "Bearer")
 			.bodyJson()
 			.extractingPath("$.detail")
 			.isEqualTo("Authentication required");

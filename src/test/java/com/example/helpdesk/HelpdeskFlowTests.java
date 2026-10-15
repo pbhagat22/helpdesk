@@ -1,7 +1,9 @@
 package com.example.helpdesk;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
+
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,7 +20,7 @@ import com.jayway.jsonpath.JsonPath;
 
 // End-to-end test: the whole application (security, controllers, services, JPA, Postgres)
 // with nothing mocked, walking through a typical ticket's life. Users log in for real
-// with HTTP Basic, so passwords are hashed and checked as in production. Slower than
+// and send the token they get back, as the React UI will. Slower than
 // the slice tests, so keep these few and focused on how the pieces fit together.
 // The properties configure the bootstrap admin, as HELPDESK_ADMIN_* would in production.
 @SpringBootTest(properties = { "helpdesk.admin.email=admin@example.com", "helpdesk.admin.password=admin-password" })
@@ -26,20 +28,19 @@ import com.jayway.jsonpath.JsonPath;
 @AutoConfigureMockMvc
 class HelpdeskFlowTests {
 
-	private static final RequestPostProcessor ADMIN = httpBasic("admin@example.com", "admin-password");
-
 	@Autowired
 	private MockMvcTester mvc;
 
 	@Test
 	void ticketLifecycle() throws Exception {
+		RequestPostProcessor admin = login("admin@example.com", "admin-password");
 		RequestPostProcessor carol = register("flow-carol@example.com", "Carol", "carol-password");
-		RequestPostProcessor dave = httpBasic("flow-dave@example.com", "dave-password");
 
 		// Only the admin can create agent accounts.
-		long agentId = createAndGetId("/api/users", ADMIN, """
+		long agentId = createAndGetId("/api/users", admin, """
 				{"email": "flow-dave@example.com", "name": "Dave", "role": "AGENT", "password": "dave-password"}
 				""");
+		RequestPostProcessor dave = login("flow-dave@example.com", "dave-password");
 		long ticketId = createAndGetId("/api/tickets", carol, """
 				{"title": "Printer on fire", "description": "Smoke everywhere", "priority": "URGENT"}
 				""");
@@ -107,8 +108,40 @@ class HelpdeskFlowTests {
 	}
 
 	@Test
-	void wrongPasswordIsRejected() {
-		assertThat(mvc.get().uri("/api/users/me").with(httpBasic("admin@example.com", "wrong-password")))
+	void tokenIdentifiesTheUser() throws Exception {
+		RequestPostProcessor gina = register("flow-gina@example.com", "Gina", "gina-password");
+
+		assertThat(mvc.get().uri("/api/users/me").with(gina))
+			.hasStatus(HttpStatus.OK)
+			.bodyJson()
+			.extractingPath("$.name")
+			.isEqualTo("Gina");
+	}
+
+	@Test
+	void wrongPasswordGetsNoToken() {
+		assertThat(mvc.post().uri("/api/auth/login").contentType(MediaType.APPLICATION_JSON).content("""
+				{"email": "admin@example.com", "password": "wrong-password"}
+				"""))
+			.hasStatus(HttpStatus.UNAUTHORIZED);
+	}
+
+	@Test
+	void missingOrTamperedTokenIsRejected() throws Exception {
+		assertThat(mvc.get().uri("/api/users/me")).hasStatus(HttpStatus.UNAUTHORIZED);
+
+		// A token is header.payload.signature. Swap in a payload claiming to be the admin
+		// (user 1, role ADMIN): the signature no longer matches, so it's rejected.
+		String token = loginForToken("admin@example.com", "admin-password");
+		String[] parts = token.split("\\.");
+		String forgedPayload = Base64.getUrlEncoder()
+			.withoutPadding()
+			.encodeToString("""
+					{"iss":"helpdesk","sub":"1","email":"evil@example.com","role":"ADMIN","exp":9999999999}
+					""".strip().getBytes(StandardCharsets.UTF_8));
+		String forged = parts[0] + "." + forgedPayload + "." + parts[2];
+
+		assertThat(mvc.get().uri("/api/users/me").header("Authorization", "Bearer " + forged))
 			.hasStatus(HttpStatus.UNAUTHORIZED);
 	}
 
@@ -117,7 +150,24 @@ class HelpdeskFlowTests {
 		createAndGetId("/api/auth/register", null, """
 				{"email": "%s", "name": "%s", "password": "%s"}
 				""".formatted(email, name, password));
-		return httpBasic(email, password);
+		return login(email, password);
+	}
+
+	// Logs in and returns something that adds "Authorization: Bearer <token>" to a request.
+	private RequestPostProcessor login(String email, String password) throws Exception {
+		String token = loginForToken(email, password);
+		return request -> {
+			request.addHeader("Authorization", "Bearer " + token);
+			return request;
+		};
+	}
+
+	private String loginForToken(String email, String password) throws Exception {
+		MvcTestResult result = mvc.post().uri("/api/auth/login").contentType(MediaType.APPLICATION_JSON).content("""
+				{"email": "%s", "password": "%s"}
+				""".formatted(email, password)).exchange();
+		assertThat(result).hasStatus(HttpStatus.OK);
+		return JsonPath.read(result.getResponse().getContentAsString(), "$.accessToken");
 	}
 
 	// POSTs as the given user (null = not logged in) and returns the new resource's id.

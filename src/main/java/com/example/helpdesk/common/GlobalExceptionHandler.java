@@ -44,12 +44,13 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 		return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
 	}
 
-	// 401: not logged in or wrong credentials. Deliberately vague, so the response doesn't
-	// reveal whether the email exists. The WWW-Authenticate header tells clients how to log in.
+	// 401: no token, an invalid or expired token, or a failed login. Deliberately vague, so
+	// the response doesn't reveal whether an email exists. The WWW-Authenticate header
+	// tells clients which scheme to use.
 	@ExceptionHandler(AuthenticationException.class)
 	ResponseEntity<ProblemDetail> handleAuthentication(AuthenticationException ex) {
 		return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-			.header(HttpHeaders.WWW_AUTHENTICATE, "Basic realm=\"helpdesk\"")
+			.header(HttpHeaders.WWW_AUTHENTICATE, "Bearer")
 			.body(ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, "Authentication required"));
 	}
 

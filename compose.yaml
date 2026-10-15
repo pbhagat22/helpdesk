@@ -34,6 +34,9 @@ services:
       # a real deployment gets these from a secret store, never from a committed file.
       HELPDESK_ADMIN_EMAIL: admin@example.com
       HELPDESK_ADMIN_PASSWORD: admin-password
+      # Key that signs login tokens (at least 32 characters). Dev-only value; without it the
+      # app makes a random key at startup and every restart logs everyone out.
+      HELPDESK_JWT_SECRET: local-dev-only-jwt-secret-change-me-0123456789
     ports:
       - "${APP_PORT:-8080}:8080"
     depends_on:

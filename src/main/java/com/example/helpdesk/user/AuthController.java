@@ -7,6 +7,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.example.helpdesk.security.LoginRequest;
+import com.example.helpdesk.security.TokenResponse;
+import com.example.helpdesk.security.TokenService;
+
 import jakarta.validation.Valid;
 
 // Public endpoints (see SecurityConfig): no login needed.
@@ -16,14 +20,24 @@ public class AuthController {
 
 	private final UserService userService;
 
-	public AuthController(UserService userService) {
+	private final TokenService tokenService;
+
+	public AuthController(UserService userService, TokenService tokenService) {
 		this.userService = userService;
+		this.tokenService = tokenService;
 	}
 
 	@PostMapping("/register")
 	@ResponseStatus(HttpStatus.CREATED)
 	public UserResponse register(@Valid @RequestBody RegisterRequest request) {
 		return userService.register(request);
+	}
+
+	// Exchanges email + password for a token. Send it on later requests as
+	// "Authorization: Bearer <accessToken>".
+	@PostMapping("/login")
+	public TokenResponse login(@Valid @RequestBody LoginRequest request) {
+		return tokenService.login(request);
 	}
 
 }

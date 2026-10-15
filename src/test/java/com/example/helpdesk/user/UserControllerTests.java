@@ -14,16 +14,19 @@ import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.assertj.MockMvcTester;
 
 import com.example.helpdesk.common.ConflictException;
 import com.example.helpdesk.security.HelpdeskUserDetails;
 import com.example.helpdesk.security.SecurityConfig;
+import com.example.helpdesk.security.TokenResponse;
+import com.example.helpdesk.security.TokenService;
 
 // @WebMvcTest starts only the web layer for these controllers (plus @RestControllerAdvice
 // classes like GlobalExceptionHandler). SecurityConfig is imported so the real security
-// rules apply. The service is a Mockito mock, so these tests check HTTP concerns:
+// rules apply. The services are Mockito mocks, so these tests check HTTP concerns:
 // URLs, JSON, status codes, validation and who may call what.
 @WebMvcTest({ UserController.class, AuthController.class })
 @Import(SecurityConfig.class)
@@ -42,8 +45,37 @@ class UserControllerTests {
 	@MockitoBean
 	private UserService userService;
 
+	@MockitoBean
+	private TokenService tokenService;
+
 	private UserResponse aliceResponse() {
 		return new UserResponse(1L, "alice@example.com", "Alice", Role.CUSTOMER, Instant.now());
+	}
+
+	@Test
+	void loginIsPublicAndReturnsToken() {
+		given(tokenService.login(any())).willReturn(new TokenResponse("eyJ.test.token", "Bearer", 3600));
+
+		assertThat(mvc.post().uri("/api/auth/login").contentType(MediaType.APPLICATION_JSON).content("""
+				{"email": "alice@example.com", "password": "correct-horse"}
+				"""))
+			.hasStatus(HttpStatus.OK)
+			.bodyJson()
+			.extractingPath("$.accessToken")
+			.isEqualTo("eyJ.test.token");
+	}
+
+	@Test
+	void loginWithWrongPasswordReturns401() {
+		given(tokenService.login(any())).willThrow(new BadCredentialsException("Bad credentials"));
+
+		assertThat(mvc.post().uri("/api/auth/login").contentType(MediaType.APPLICATION_JSON).content("""
+				{"email": "alice@example.com", "password": "wrong-password"}
+				"""))
+			.hasStatus(HttpStatus.UNAUTHORIZED)
+			.bodyJson()
+			.extractingPath("$.detail")
+			.isEqualTo("Authentication required");
 	}
 
 	@Test
