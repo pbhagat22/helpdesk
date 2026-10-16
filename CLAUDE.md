@@ -118,6 +118,19 @@ The [Dockerfile](Dockerfile) is multi-stage. A Node stage builds the React UI (s
 
 No linter or formatter is configured. Tests need Docker running (OrbStack is installed), but not `docker compose`. Testcontainers starts its own Postgres.
 
+## AWS (roadmap stage 7, in progress)
+
+Built by hand in region **us-west-2**, before Terraform automates it in stage 8. The user runs AWS commands themselves (CLI profile `helpdesk`, through IAM Identity Center: `aws sso login --profile helpdesk`); Claude verifies with read-only commands. Resources that bill hourly are created and **deleted every session**; only the ECR repository stays.
+
+- **ECR** repository `helpdesk` has immutable tags (git short sha), a lifecycle policy keeping 5 images, and registry-wide BASIC scan-on-push (a registry-level rule; the repository-level `scanOnPush` flag isn't honoured). Push a plain single-arch image; without the attestation flags, Docker pushes an image index plus a provenance manifest, which breaks scanning by tag and the lifecycle count:
+  ```bash
+  REGISTRY=$(aws sts get-caller-identity --query Account --output text).dkr.ecr.us-west-2.amazonaws.com
+  aws ecr get-login-password | docker login --username AWS --password-stdin $REGISTRY
+  docker build --pull --platform linux/arm64 --provenance=false --sbom=false -t $REGISTRY/helpdesk:$(git rev-parse --short HEAD) .
+  docker push $REGISTRY/helpdesk:$(git rev-parse --short HEAD)
+  ```
+- **Planned architecture:** default VPC with public subnets and **no NAT gateway**; ALB → ECS Fargate (ARM64) services `app`, `kafka` (apache/kafka) and `elasticsearch`, the last two reached through Cloud Map DNS. Their data isn't durable, which the design tolerates: Postgres is the source of truth and search can be rebuilt with `/api/admin/search/reindex`. RDS Postgres `db.t4g.micro` is reachable only from the app's security group. Secrets (DB password, `HELPDESK_JWT_SECRET`, admin password) live in SSM Parameter Store SecureStrings. Logs go to CloudWatch. HTTPS is likely via CloudFront in front of the ALB.
+
 ## Configuration
 
 Config lives in `src/main/resources/application.properties`. The app connects to Postgres 18 from `compose.yaml` (database, user and password are all `helpdesk`). Override the connection with the `DB_URL`, `DB_USERNAME` and `DB_PASSWORD` environment variables. Kafka (`apache/kafka:4.2.1`, single-node KRaft) is at `localhost:9092` from the host, overridden with `KAFKA_BOOTSTRAP_SERVERS`. Inside the Compose network it's `kafka:29092`, because Kafka advertises a separate listener per network. Elasticsearch (single node, security off for dev, 512 MB heap) is at `http://localhost:9200`, overridden with `ELASTICSEARCH_URIS`, or `http://elasticsearch:9200` inside Compose. The SQL Hibernate runs is logged at debug level.
