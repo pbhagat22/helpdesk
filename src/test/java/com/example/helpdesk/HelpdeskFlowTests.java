@@ -1,6 +1,7 @@
 package com.example.helpdesk;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -99,6 +100,8 @@ class HelpdeskFlowTests {
 
 		// Frank can't read, comment on, or even detect Erin's ticket...
 		assertThat(mvc.get().uri("/api/tickets/{id}", erinsTicket).with(frank)).hasStatus(HttpStatus.NOT_FOUND);
+		assertThat(mvc.get().uri("/api/tickets/{id}/activity", erinsTicket).with(frank))
+			.hasStatus(HttpStatus.NOT_FOUND);
 		assertThat(mvc.post()
 			.uri("/api/tickets/{id}/comments", erinsTicket)
 			.with(frank)
@@ -187,6 +190,20 @@ class HelpdeskFlowTests {
 				""");
 
 		assertThat(readEventTypes(ticketId, 4)).containsExactly("CREATED", "STATUS_CHANGED", "ASSIGNED", "COMMENTED");
+
+		// The app's own listener turns the same events into the ticket's history. That happens
+		// in the background, so wait (up to 15s) until it's there rather than expecting it at once.
+		await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> assertThat(
+				mvc.get().uri("/api/tickets/{id}/activity", ticketId).with(hana))
+			.hasStatus(HttpStatus.OK)
+			.bodyJson()
+			.extractingPath("$[*].type")
+			.asArray()
+			.containsExactly("CREATED", "STATUS_CHANGED", "ASSIGNED", "COMMENTED"));
+		assertThat(mvc.get().uri("/api/tickets/{id}/activity", ticketId).with(hana))
+			.bodyJson()
+			.extractingPath("$[1].details.to")
+			.isEqualTo("IN_PROGRESS");
 	}
 
 	// Reads the topic from the beginning with a fresh consumer group, keeping the events for

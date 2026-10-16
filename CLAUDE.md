@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Architecture
 
-The code is organized by feature package under `com.example.helpdesk`: `user`, `ticket` (tickets and comments), `security` and `common` (exceptions and the global error handler). Each feature is layered Controller → Service → Repository:
+The code is organized by feature package under `com.example.helpdesk`: `user`, `ticket` (tickets, comments, and publishing ticket events), `activity` (the Kafka consumer that builds ticket history), `security` and `common` (exceptions and the global error handler). Each feature is layered Controller → Service → Repository:
 
 - **Controllers** only handle HTTP. They take and return DTO records (`Create*Request`, `Update*Request`, `*Response`) and never expose JPA entities. Request bodies are checked with `@Valid` against Bean Validation annotations on the request records.
 - **Services** own the transactions (`@Transactional(readOnly = true)` at class level, overridden on write methods) and convert entities to DTOs *inside* the transaction. `spring.jpa.open-in-view=false` is set, so lazy relationships read outside a service method throw `LazyInitializationException` instead of running hidden queries.
@@ -23,6 +23,7 @@ The code is organized by feature package under `com.example.helpdesk`: `user`, `
 - **Bootstrap admin:** `AdminBootstrap` (an `ApplicationRunner`) creates an ADMIN at startup from `helpdesk.admin.email` and `helpdesk.admin.password` (`AdminProperties`, set with the `HELPDESK_ADMIN_EMAIL` and `HELPDESK_ADMIN_PASSWORD` environment variables) if that email doesn't exist. `compose.yaml` sets dev values for the `app` service, including `HELPDESK_JWT_SECRET`. With `spring-boot:run`, pass them as environment variables. Real credentials never go in committed files.
 
 - **Kafka events:** `TicketService` publishes a `TicketEvent` (`eventId`, `type` from `TicketEventType`, `ticketId`, `actorId`, `occurredAt`, a `details` string map) through Spring's `ApplicationEventPublisher` for every *real* change: created, status or priority changed (`from`/`to`), assigned, commented. Setting a field to its current value publishes nothing. `TicketEventPublisher` forwards events with `@TransactionalEventListener`, i.e. only after the DB commit, to the topic `helpdesk.ticket-events` (3 partitions, created at startup by a `NewTopic` bean). Events are JSON (`JacksonJsonSerializer`, no type headers), keyed by ticket id so each ticket's events stay in order. Send failures are logged, never thrown: the request still succeeds, and the producer gives up after `max.block.ms=3000`. Events can be lost if the app dies between commit and send; there's no transactional outbox, by design for now.
+- **Ticket history (Kafka consumer)** lives in the `activity` package. `TicketActivityListener` (`@KafkaListener`, group `helpdesk-activity`) stores each event in `ticket_activity` (V3). The table has plain `ticket_id`/`actor_id` columns with **no foreign keys**, because it's owned by the consumer, plus `details` as `jsonb` via `@JdbcTypeCode(SqlTypes.JSON)`. Processing is **idempotent**: an `existsByEventId` check, backed by a unique `event_id`, makes redeliveries and replays (offset resets) harmless. Consumer config is in `application.properties`: `ErrorHandlingDeserializer` wrapping `JacksonJsonDeserializer` with default type `TicketEvent`, no type headers, and `auto-offset-reset=earliest`. `KafkaConsumerConfig` adds a `DefaultErrorHandler` (2 retries, 1s apart, then log and skip). `GET /api/tickets/{id}/activity` (`TicketActivityService`) reuses `TicketService.get` for visibility and is **eventually consistent**. The UI's History section reloads it right after a change and again 1.5s later.
 
 **Tests**, in `src/test/java`, mirror the main packages:
 - `*ServiceTests`: plain Mockito unit tests with no Spring context.
@@ -89,6 +90,8 @@ docker compose up -d                   # start Postgres + Kafka (required before
 docker compose down                    # stop them (data kept in the pgdata/kafkadata volumes; add -v to wipe)
 docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 \
   --topic helpdesk.ticket-events --from-beginning --property print.key=true   # watch ticket events
+docker compose exec kafka /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 \
+  --describe --group helpdesk-activity                                        # consumer offsets and lag
 ./mvnw spring-boot:run                 # run the app (port 8080 by default)
 HELPDESK_ADMIN_EMAIL=admin@example.com HELPDESK_ADMIN_PASSWORD=admin-password ./mvnw spring-boot:run  # same, with a bootstrap admin
 ./mvnw test                            # run all tests

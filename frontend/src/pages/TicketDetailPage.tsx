@@ -5,7 +5,16 @@ import { useAuth } from '../auth'
 import { PriorityBadge, StatusBadge } from '../components/Badges'
 import { ErrorMessage } from '../components/ErrorMessage'
 import { formatDate, isStaff, label } from '../format'
-import { PRIORITIES, TICKET_STATUSES, type Comment, type Priority, type Ticket, type TicketStatus, type User } from '../types'
+import {
+  PRIORITIES,
+  TICKET_STATUSES,
+  type Activity,
+  type Comment,
+  type Priority,
+  type Ticket,
+  type TicketStatus,
+  type User,
+} from '../types'
 import { useApi } from '../useApi'
 
 export function TicketDetailPage() {
@@ -13,6 +22,14 @@ export function TicketDetailPage() {
   const { user } = useAuth()
   const { data: ticket, error, reload: reloadTicket } = useApi<Ticket>(`/tickets/${id}`)
   const { data: comments, reload: reloadComments } = useApi<Comment[]>(`/tickets/${id}/comments`)
+  const { data: history, reload: reloadHistory } = useApi<Activity[]>(`/tickets/${id}/activity`)
+
+  // The history is built from Kafka events in the background, so right after a change it may
+  // not include it yet ("eventually consistent"). Reload now, and once more a moment later.
+  function refreshHistory() {
+    reloadHistory()
+    setTimeout(reloadHistory, 1500)
+  }
 
   // Customers get 404 for tickets that aren't theirs (the backend hides that they exist).
   if (error instanceof ApiError && error.status === 404) {
@@ -46,7 +63,16 @@ export function TicketDetailPage() {
       <div className="card description">{ticket.description}</div>
 
       {/* key: when the ticket changes (after a save), start the form fresh from the new values */}
-      {isStaff(user?.role) && <StaffControls key={ticket.updatedAt} ticket={ticket} onSaved={reloadTicket} />}
+      {isStaff(user?.role) && (
+        <StaffControls
+          key={ticket.updatedAt}
+          ticket={ticket}
+          onSaved={() => {
+            reloadTicket()
+            refreshHistory()
+          }}
+        />
+      )}
 
       <h2>Conversation</h2>
       {comments?.length === 0 && <p className="hint">No comments yet.</p>}
@@ -62,9 +88,45 @@ export function TicketDetailPage() {
           </li>
         ))}
       </ul>
-      <CommentForm ticketId={ticket.id} onAdded={reloadComments} />
+      <CommentForm
+        ticketId={ticket.id}
+        onAdded={() => {
+          reloadComments()
+          refreshHistory()
+        }}
+      />
+
+      <h2>History</h2>
+      {history?.length === 0 && <p className="hint">Nothing yet. The history updates a moment after each change.</p>}
+      <ol className="history">
+        {history?.map((entry) => (
+          <li key={entry.id}>
+            <span>{describe(entry)}</span> <span className="hint">· {formatDate(entry.occurredAt)}</span>
+          </li>
+        ))}
+      </ol>
     </section>
   )
+}
+
+// One readable sentence per history entry
+function describe(entry: Activity): string {
+  const who = entry.actor?.name ?? 'Someone'
+  const { details } = entry
+  switch (entry.type) {
+    case 'CREATED':
+      return `${who} opened the ticket`
+    case 'STATUS_CHANGED':
+      return `${who} changed the status from ${label(details.from)} to ${label(details.to)}`
+    case 'PRIORITY_CHANGED':
+      return `${who} changed the priority from ${label(details.from)} to ${label(details.to)}`
+    case 'ASSIGNED':
+      return details.assigneeId === String(entry.actor?.id)
+        ? `${who} assigned it to themselves`
+        : `${who} assigned it to ${details.assigneeName}`
+    case 'COMMENTED':
+      return `${who} commented`
+  }
 }
 
 // Status, priority and assignee: staff only (the backend returns 403 to customers anyway).

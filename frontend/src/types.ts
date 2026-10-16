@@ -36,6 +36,17 @@ export interface Comment {
   createdAt: string
 }
 
+export type ActivityType = 'CREATED' | 'STATUS_CHANGED' | 'PRIORITY_CHANGED' | 'ASSIGNED' | 'COMMENTED'
+
+// One entry in a ticket's history (built by the backend from Kafka events)
+export interface Activity {
+  id: number
+  type: ActivityType
+  actor: User | null
+  details: Record<string, string>
+  occurredAt: string
+}
+
 export interface TokenResponse {
   accessToken: string
   tokenType: string

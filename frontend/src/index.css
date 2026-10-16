@@ -305,6 +305,33 @@ table.tickets tr:last-child td {
   gap: 0.5rem;
 }
 
+/* History: a simple vertical timeline */
+.history {
+  list-style: none;
+  padding: 0 0 0 1rem;
+  margin: 0;
+  border-left: 2px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.history li {
+  position: relative;
+  font-size: 0.95rem;
+}
+
+.history li::before {
+  content: '';
+  position: absolute;
+  left: calc(-1rem - 5px);
+  top: 0.45em;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
 /* Narrow screens: let the ticket table scroll sideways instead of squashing */
 @media (max-width: 640px) {
   .content {
