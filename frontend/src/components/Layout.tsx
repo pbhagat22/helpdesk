@@ -1,15 +1,22 @@
-import { Link, Outlet } from 'react-router'
+import { Link, NavLink, Outlet } from 'react-router'
 import { useAuth } from '../auth'
 
-// The frame around every logged-in page: header with the user and a logout button.
+// The frame around every logged-in page: header with navigation, the user and a logout button.
 export function Layout() {
   const { user, logout } = useAuth()
   return (
     <>
       <header className="topbar">
-        <Link to="/" className="brand">
-          Helpdesk
-        </Link>
+        <nav className="topbar-nav">
+          <Link to="/" className="brand">
+            Helpdesk
+          </Link>
+          {/* NavLink adds class="active" when its page is open; "end" so / isn't active on /users */}
+          <NavLink to="/" end>
+            Tickets
+          </NavLink>
+          {user?.role === 'ADMIN' && <NavLink to="/users">Users</NavLink>}
+        </nav>
         <div className="topbar-user">
           <span>
             {user?.name} <span className="badge">{user?.role}</span>

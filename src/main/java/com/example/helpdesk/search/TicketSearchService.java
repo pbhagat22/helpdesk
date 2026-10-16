@@ -22,6 +22,8 @@ import org.springframework.data.elasticsearch.core.query.highlight.HighlightPara
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import co.elastic.clients.elasticsearch._types.query_dsl.TextQueryType;
+
 import com.example.helpdesk.common.ServiceUnavailableException;
 import com.example.helpdesk.security.HelpdeskUserDetails;
 import com.example.helpdesk.ticket.Comment;
@@ -135,11 +137,16 @@ public class TicketSearchService {
 		return results;
 	}
 
-	// The query, in Elasticsearch's query language:
-	// - multi_match: look for the words in title, description and comments; a match in the
-	//   title counts three times as much (^3). fuzziness AUTO tolerates typos ("printr").
+	// The query, in Elasticsearch's query language. A ticket matches if either "should" clause
+	// does (minimum_should_match 1); matching both scores higher.
+	// - Fuzzy: the words in title, description or comments, tolerating typos ("prnter").
+	//   fuzziness AUTO allows 1 edit for words of 3-5 letters and 2 for longer ones.
+	// - Prefix (bool_prefix): the last word also matches longer words that start with it, so
+	//   "print" and "comp" find "printer" and "computer" while the user is still typing. The
+	//   English analyzer alone can't do that: it indexes "printer" as "printer", not "print".
+	// A title match counts three times as much (^3).
 	// - filter: for customers, only their own tickets. A filter only includes or excludes;
-	//   unlike "must", it doesn't affect the relevance score.
+	//   unlike should/must, it doesn't affect the relevance score.
 	private NativeQuery buildQuery(String text, Long reporterId) {
 		HighlightParameters highlightParameters = HighlightParameters.builder()
 			.withPreTags(MARK_START)
@@ -150,9 +157,12 @@ public class TicketSearchService {
 		Highlight highlight = new Highlight(highlightParameters,
 				List.of(new HighlightField("title"), new HighlightField("description"), new HighlightField("comments")));
 
+		List<String> fields = List.of("title^3", "description", "comments");
 		return NativeQuery.builder().withQuery(q -> q.bool(bool -> {
-			bool.must(must -> must.multiMatch(
-					match -> match.query(text).fields("title^3", "description", "comments").fuzziness("AUTO")));
+			bool.should(fuzzy -> fuzzy.multiMatch(match -> match.query(text).fields(fields).fuzziness("AUTO")));
+			bool.should(prefix -> prefix
+				.multiMatch(match -> match.query(text).fields(fields).type(TextQueryType.BoolPrefix)));
+			bool.minimumShouldMatch("1");
 			if (reporterId != null) {
 				bool.filter(filter -> filter.term(term -> term.field("reporterId").value(reporterId)));
 			}

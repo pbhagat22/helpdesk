@@ -1,6 +1,7 @@
 // TypeScript versions of the backend's JSON (the Java *Response records).
 
 export type Role = 'CUSTOMER' | 'AGENT' | 'ADMIN'
+export const ROLES: Role[] = ['CUSTOMER', 'AGENT', 'ADMIN']
 
 export interface User {
   id: number
@@ -34,6 +35,12 @@ export interface Comment {
   author: User
   body: string
   createdAt: string
+}
+
+// A search hit: the ticket (from Postgres) plus snippets of matching text with marked words
+export interface SearchResult {
+  ticket: Ticket
+  highlights: string[]
 }
 
 export type ActivityType = 'CREATED' | 'STATUS_CHANGED' | 'PRIORITY_CHANGED' | 'ASSIGNED' | 'COMMENTED'

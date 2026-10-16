@@ -2,6 +2,7 @@ package com.example.helpdesk.user;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
@@ -142,6 +143,35 @@ class UserControllerTests {
 				"""))
 			.hasStatus(HttpStatus.FORBIDDEN);
 		verifyNoInteractions(userService);
+	}
+
+	@Test
+	void changeRoleIsForAdminsOnly() {
+		given(userService.changeRole(eq(1L), eq(Role.AGENT), eq(9L)))
+			.willReturn(new UserResponse(1L, "alice@example.com", "Alice", Role.AGENT, Instant.now()));
+
+		assertThat(mvc.patch().uri("/api/users/1").with(user(alice)).contentType(MediaType.APPLICATION_JSON).content("""
+				{"role": "AGENT"}
+				"""))
+			.hasStatus(HttpStatus.FORBIDDEN);
+		// eq(9L): the controller passes the admin's own id, so the service can block self-changes
+		assertThat(mvc.patch().uri("/api/users/1").with(user(admin)).contentType(MediaType.APPLICATION_JSON).content("""
+				{"role": "AGENT"}
+				"""))
+			.hasStatus(HttpStatus.OK)
+			.bodyJson()
+			.extractingPath("$.role")
+			.isEqualTo("AGENT");
+	}
+
+	@Test
+	void changeRoleRequiresARole() {
+		assertThat(mvc.patch().uri("/api/users/1").with(user(admin)).contentType(MediaType.APPLICATION_JSON).content("{}"))
+			.hasStatus(HttpStatus.BAD_REQUEST)
+			.bodyJson()
+			.extractingPath("$.errors")
+			.asMap()
+			.containsOnlyKeys("role");
 	}
 
 	@Test

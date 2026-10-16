@@ -12,8 +12,8 @@ import org.springframework.data.elasticsearch.annotations.FieldType;
 //
 // Text fields use the "english" analyzer: it lowercases, drops filler words ("the", "is") and
 // reduces words to their stem, so "printing", "printed" and "prints" all match (stem "print"),
-// and "smoking" matches "smoke". (It doesn't link "printer" to "print"; the query's fuzziness
-// often catches such near-misses instead.)
+// and "smoking" matches "smoke". It treats "printer" as a word of its own, though; the search
+// query's prefix matching is what lets "print" find "printer" (see TicketSearchService).
 // Keyword fields are stored as-is, for exact filtering. createIndex = false: the app creates
 // the index itself (TicketSearchService.ensureIndex), so a missing Elasticsearch can't stop
 // the app from starting.

@@ -6,6 +6,7 @@ import { NewTicketPage } from './pages/NewTicketPage'
 import { RegisterPage } from './pages/RegisterPage'
 import { TicketDetailPage } from './pages/TicketDetailPage'
 import { TicketListPage } from './pages/TicketListPage'
+import { UsersPage } from './pages/UsersPage'
 
 // Pages under this route need a logged-in user; everyone else is sent to /login.
 function RequireAuth() {
@@ -14,6 +15,13 @@ function RequireAuth() {
     return <p className="centered">Loading…</p>
   }
   return user ? <Outlet /> : <Navigate to="/login" replace />
+}
+
+// Admin-only pages: anyone else is sent back to the ticket list. This only hides the page;
+// the real protection is the backend's 403.
+function RequireAdmin() {
+  const { user } = useAuth()
+  return user?.role === 'ADMIN' ? <Outlet /> : <Navigate to="/" replace />
 }
 
 // Client-side routing: the browser URL picks the page without a server round trip.
@@ -29,6 +37,7 @@ const router = createBrowserRouter([
           { path: '/', element: <TicketListPage /> },
           { path: '/tickets/new', element: <NewTicketPage /> },
           { path: '/tickets/:id', element: <TicketDetailPage /> },
+          { element: <RequireAdmin />, children: [{ path: '/users', element: <UsersPage /> }] },
         ],
       },
     ],

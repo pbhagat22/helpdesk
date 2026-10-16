@@ -305,6 +305,99 @@ table.tickets tr:last-child td {
   gap: 0.5rem;
 }
 
+/* Header navigation */
+.topbar-nav {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.topbar-nav a:not(.brand) {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.topbar-nav a.active {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* Users page */
+.create-user h2 {
+  margin-top: 0;
+}
+
+.create-user-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+  align-items: end; /* line inputs up even when a label wraps (the password hint) */
+}
+
+.role-select {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.role-select select {
+  width: auto;
+}
+
+.success {
+  color: #1d6b3a;
+  margin: 0;
+}
+
+@media (prefers-color-scheme: dark) {
+  .success {
+    color: #8fdcaa;
+  }
+}
+
+/* Search */
+.search {
+  margin-bottom: 1rem;
+}
+
+mark {
+  background: #ffe58a;
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+@media (prefers-color-scheme: dark) {
+  mark {
+    background: #6b5a14;
+  }
+}
+
+.search-results {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.result-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  font-weight: 600;
+}
+
+.snippet {
+  margin: 0.5rem 0 0;
+}
+
+.search-results .hint {
+  margin: 0.5rem 0 0;
+}
+
 /* History: a simple vertical timeline */
 .history {
   list-style: none;

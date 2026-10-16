@@ -130,6 +130,28 @@ class HelpdeskFlowTests {
 		assertThat(mvc.get().uri("/api/users").with(erin)).hasStatus(HttpStatus.FORBIDDEN);
 	}
 
+	// The role lives inside the login token, so a role change only takes effect with a new
+	// token: the old one keeps the old role until it expires.
+	@Test
+	void promotedUserGetsNewRightsAfterLoggingInAgain() throws Exception {
+		RequestPostProcessor admin = login("admin@example.com", "admin-password");
+		RequestPostProcessor oldToken = register("flow-lena@example.com", "Lena", "lena-password");
+		long lenaId = JsonPath.<Number>read(
+				mvc.get().uri("/api/users/me").with(oldToken).exchange().getResponse().getContentAsString(), "$.id")
+			.longValue();
+
+		assertThat(mvc.patch().uri("/api/users/{id}", lenaId).with(admin).contentType(MediaType.APPLICATION_JSON).content("""
+				{"role": "AGENT"}
+				"""))
+			.hasStatus(HttpStatus.OK);
+
+		// Staff-only endpoint: the old token still says CUSTOMER...
+		assertThat(mvc.get().uri("/api/users").with(oldToken)).hasStatus(HttpStatus.FORBIDDEN);
+		// ...a fresh login carries AGENT.
+		RequestPostProcessor newToken = login("flow-lena@example.com", "lena-password");
+		assertThat(mvc.get().uri("/api/users").with(newToken)).hasStatus(HttpStatus.OK);
+	}
+
 	@Test
 	void tokenIdentifiesTheUser() throws Exception {
 		RequestPostProcessor gina = register("flow-gina@example.com", "Gina", "gina-password");
@@ -225,9 +247,12 @@ class HelpdeskFlowTests {
 				{"body": "Ordered a replacement toner cartridge"}
 				""");
 
-		// Different word forms, in any order: "smoking" matches "smoke" (same stem), and "printing"
-		// matches "printer" through fuzziness (stems "print" and "printer" are 2 edits apart)
-		awaitSearchIds(ivy, "smoking printing", ids -> assertThat(ids).containsExactly(ivysTicket));
+		// One word per search, so each case is tested on its own (with several words, any one
+		// matching is enough). Word forms: "smoking" matches "smoke" (same stem).
+		awaitSearchIds(ivy, "smoking", ids -> assertThat(ids).containsExactly(ivysTicket));
+		// Prefixes: "print" and "printing" (stem "print") find "printer"
+		awaitSearchIds(ivy, "print", ids -> assertThat(ids).containsExactly(ivysTicket));
+		awaitSearchIds(ivy, "printing", ids -> assertThat(ids).containsExactly(ivysTicket));
 		// A typo
 		awaitSearchIds(ivy, "jamed", ids -> assertThat(ids).containsExactly(ivysTicket));
 		// Text that's only in a comment (indexed after the COMMENTED event)
