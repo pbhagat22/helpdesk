@@ -30,6 +30,7 @@ import org.springframework.test.web.servlet.assertj.MockMvcTester;
 import org.springframework.test.web.servlet.assertj.MvcTestResult;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
+import com.example.helpdesk.search.TicketSearchService;
 import com.example.helpdesk.ticket.TicketEventPublisher;
 import com.jayway.jsonpath.JsonPath;
 
@@ -39,7 +40,8 @@ import com.jayway.jsonpath.JsonPath;
 // the slice tests, so keep these few and focused on how the pieces fit together.
 // The properties configure the bootstrap admin, as HELPDESK_ADMIN_* would in production.
 @SpringBootTest(properties = { "helpdesk.admin.email=admin@example.com", "helpdesk.admin.password=admin-password" })
-@Import({ TestcontainersConfiguration.class, KafkaTestcontainersConfiguration.class })
+@Import({ TestcontainersConfiguration.class, KafkaTestcontainersConfiguration.class,
+		ElasticsearchTestcontainersConfiguration.class })
 @AutoConfigureMockMvc
 class HelpdeskFlowTests {
 
@@ -204,6 +206,73 @@ class HelpdeskFlowTests {
 			.bodyJson()
 			.extractingPath("$[1].details.to")
 			.isEqualTo("IN_PROGRESS");
+	}
+
+	// Search goes through Kafka (event) → indexer → Elasticsearch, so results appear after a
+	// moment; each check waits for them.
+	@Test
+	void searchFindsTicketsByMeaningAndKeepsCustomersApart() throws Exception {
+		RequestPostProcessor admin = login("admin@example.com", "admin-password");
+		RequestPostProcessor ivy = register("flow-ivy@example.com", "Ivy", "ivy-password");
+		RequestPostProcessor jack = register("flow-jack@example.com", "Jack", "jack-password");
+		long ivysTicket = createAndGetId("/api/tickets", ivy, """
+				{"title": "Office printer jammed", "description": "Paper stuck and it smells of smoke", "priority": "HIGH"}
+				""");
+		long jacksTicket = createAndGetId("/api/tickets", jack, """
+				{"title": "Monitor flickering", "description": "The display goes dark every few minutes", "priority": "LOW"}
+				""");
+		createAndGetId("/api/tickets/" + ivysTicket + "/comments", admin, """
+				{"body": "Ordered a replacement toner cartridge"}
+				""");
+
+		// Different word forms, in any order: "smoking" matches "smoke" (same stem), and "printing"
+		// matches "printer" through fuzziness (stems "print" and "printer" are 2 edits apart)
+		awaitSearchIds(ivy, "smoking printing", ids -> assertThat(ids).containsExactly(ivysTicket));
+		// A typo
+		awaitSearchIds(ivy, "jamed", ids -> assertThat(ids).containsExactly(ivysTicket));
+		// Text that's only in a comment (indexed after the COMMENTED event)
+		awaitSearchIds(ivy, "toner", ids -> assertThat(ids).containsExactly(ivysTicket));
+		// Matched words come back marked, for highlighting in the UI
+		assertThat(mvc.get().uri("/api/tickets/search?q=toner").with(ivy))
+			.bodyJson()
+			.extractingPath("$[0].highlights[0]")
+			.asString()
+			.contains(TicketSearchService.MARK_START + "toner" + TicketSearchService.MARK_END);
+
+		// Customers only find their own tickets; staff find everyone's.
+		awaitSearchIds(admin, "flickering display", ids -> assertThat(ids).contains(jacksTicket));
+		assertThat(searchIds(jack, "printer toner")).doesNotContain(ivysTicket);
+		assertThat(searchIds(ivy, "flickering display")).doesNotContain(jacksTicket);
+
+		assertThat(mvc.get().uri("/api/tickets/search?q=").with(ivy)).hasStatus(HttpStatus.BAD_REQUEST);
+	}
+
+	@Test
+	void onlyAdminsCanRebuildTheSearchIndex() throws Exception {
+		RequestPostProcessor admin = login("admin@example.com", "admin-password");
+		RequestPostProcessor kim = register("flow-kim@example.com", "Kim", "kim-password");
+		createAndGetId("/api/tickets", kim, """
+				{"title": "Reindex me", "description": "Anything", "priority": "LOW"}
+				""");
+
+		assertThat(mvc.post().uri("/api/admin/search/reindex").with(kim)).hasStatus(HttpStatus.FORBIDDEN);
+		assertThat(mvc.post().uri("/api/admin/search/reindex").with(admin)).hasStatus(HttpStatus.OK)
+			.bodyJson()
+			.extractingPath("$.indexed")
+			.asNumber()
+			.satisfies(count -> assertThat(count.intValue()).isPositive());
+	}
+
+	private List<Long> searchIds(RequestPostProcessor user, String query) throws Exception {
+		MvcTestResult result = mvc.get().uri("/api/tickets/search").param("q", query).with(user).exchange();
+		assertThat(result).hasStatus(HttpStatus.OK);
+		List<Number> ids = JsonPath.read(result.getResponse().getContentAsString(), "$[*].ticket.id");
+		return ids.stream().map(Number::longValue).toList();
+	}
+
+	private void awaitSearchIds(RequestPostProcessor user, String query,
+			java.util.function.Consumer<List<Long>> assertion) {
+		await().atMost(Duration.ofSeconds(20)).untilAsserted(() -> assertion.accept(searchIds(user, query)));
 	}
 
 	// Reads the topic from the beginning with a fresh consumer group, keeping the events for

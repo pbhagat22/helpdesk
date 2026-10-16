@@ -1,5 +1,6 @@
 package com.example.helpdesk.ticket;
 
+import java.util.Collection;
 import java.util.List;
 
 import org.springframework.data.jpa.repository.EntityGraph;
@@ -7,6 +8,10 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
 public interface TicketRepository extends JpaRepository<Ticket, Long> {
+
+	// Several tickets by id in one query (e.g. search results), with reporter and assignee
+	@EntityGraph(attributePaths = { "reporter", "assignee" })
+	List<Ticket> findByIdIn(Collection<Long> ids);
 
 	// One query for every combination of optional filters: a null parameter means
 	// "don't filter on this". Written in JPQL (entity and field names, not tables

@@ -1,5 +1,5 @@
 # Local services.
-#   docker compose up -d                       Postgres + Kafka (run the app with ./mvnw spring-boot:run)
+#   docker compose up -d                       Postgres + Kafka + Elasticsearch (run the app with ./mvnw spring-boot:run)
 #   docker compose --profile app up -d --build Postgres + the app as a container
 #   docker compose --profile app down          stop everything (add -v to wipe the database)
 services:
@@ -52,6 +52,26 @@ services:
       start_period: 20s
       retries: 10
 
+  # Single-node Elasticsearch for full-text ticket search.
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.4.5
+    environment:
+      discovery.type: single-node
+      # Local development only: no passwords or TLS. A real deployment keeps security on.
+      xpack.security.enabled: "false"
+      # Elasticsearch takes half the machine's memory by default; cap the JVM heap at 512 MB
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    ports:
+      - "9200:9200"
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs 'http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s' > /dev/null"]
+      interval: 10s
+      timeout: 10s
+      start_period: 30s
+      retries: 12
+
   app:
     # Only started with --profile app, so plain `docker compose up` stays Postgres-only
     profiles: ["app"]
@@ -63,6 +83,7 @@ services:
       DB_USERNAME: helpdesk
       DB_PASSWORD: helpdesk
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      ELASTICSEARCH_URIS: http://elasticsearch:9200
       # First admin account, created at startup if missing. Local development only;
       # a real deployment gets these from a secret store, never from a committed file.
       HELPDESK_ADMIN_EMAIL: admin@example.com
@@ -77,6 +98,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
     # "Healthy" once Spring Boot reports UP, so `up --wait` returns only when the API
     # answers. The JRE image has no curl, so bash's /dev/tcp sends a raw HTTP request.
     healthcheck:
@@ -89,3 +112,4 @@ services:
 volumes:
   pgdata:
   kafkadata:
+  esdata:

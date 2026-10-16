@@ -61,6 +61,13 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 		return ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "You don't have permission to do this");
 	}
 
+	// 503: try again later. The cause is logged; clients only get the message.
+	@ExceptionHandler(ServiceUnavailableException.class)
+	ProblemDetail handleServiceUnavailable(ServiceUnavailableException ex) {
+		log.warn(ex.getMessage(), ex.getCause());
+		return ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage());
+	}
+
 	// Safety net for unique constraints the service didn't check first
 	// (e.g. two requests registering the same email at the same moment).
 	@ExceptionHandler(DataIntegrityViolationException.class)
