@@ -1,0 +1,37 @@
+{
+  "family": "helpdesk-app",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "runtimePlatform": { "cpuArchitecture": "ARM64", "operatingSystemFamily": "LINUX" },
+  "cpu": "512",
+  "memory": "2048",
+  "executionRoleArn": "arn:aws:iam::936303390305:role/helpdesk-ecs-execution",
+  "containerDefinitions": [
+    {
+      "name": "app",
+      "image": "936303390305.dkr.ecr.us-east-2.amazonaws.com/helpdesk:e69e7c8",
+      "essential": true,
+      "portMappings": [{ "containerPort": 8080, "protocol": "tcp" }],
+      "environment": [
+        { "name": "DB_URL", "value": "jdbc:postgresql://helpdesk-db.cpow8k2qs3rt.us-east-2.rds.amazonaws.com:5432/helpdesk" },
+        { "name": "DB_USERNAME", "value": "helpdesk" },
+        { "name": "KAFKA_BOOTSTRAP_SERVERS", "value": "kafka.helpdesk.local:9092" },
+        { "name": "ELASTICSEARCH_URIS", "value": "http://elasticsearch.helpdesk.local:9200" },
+        { "name": "HELPDESK_ADMIN_EMAIL", "value": "admin@example.com" }
+      ],
+      "secrets": [
+        { "name": "DB_PASSWORD", "valueFrom": "arn:aws:ssm:us-east-2:936303390305:parameter/helpdesk/db-password" },
+        { "name": "HELPDESK_JWT_SECRET", "valueFrom": "arn:aws:ssm:us-east-2:936303390305:parameter/helpdesk/jwt-secret" },
+        { "name": "HELPDESK_ADMIN_PASSWORD", "valueFrom": "arn:aws:ssm:us-east-2:936303390305:parameter/helpdesk/admin-password" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/helpdesk",
+          "awslogs-region": "us-east-2",
+          "awslogs-stream-prefix": "app"
+        }
+      }
+    }
+  ]
+}
