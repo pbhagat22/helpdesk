@@ -11,6 +11,11 @@ resource "aws_iam_openid_connect_provider" "github" {
 
 locals {
   github_repository = "pbhagat22/helpdesk"
+  # The repository uses GitHub's immutable subject claims: the token's "sub" carries the owner's
+  # and repository's numeric IDs next to their names. IDs are never reused, so a new repository
+  # created under this name after a rename or delete couldn't assume the role.
+  # Check with: gh api repos/pbhagat22/helpdesk/actions/oidc/customization/sub
+  github_sub_prefix = "repo:pbhagat22@235375028/helpdesk@1418245817"
 }
 
 resource "aws_iam_role" "github_deploy" {
@@ -28,7 +33,7 @@ resource "aws_iam_role" "github_deploy" {
           # "sub" names the repository and ref. Only workflow runs on main get in: not other
           # branches, not pull requests (a PR could otherwise change the workflow and deploy),
           # and not any other repository on GitHub.
-          "token.actions.githubusercontent.com:sub" = "repo:${local.github_repository}:ref:refs/heads/main"
+          "token.actions.githubusercontent.com:sub" = "${local.github_sub_prefix}:ref:refs/heads/main"
         }
       }
     }]
