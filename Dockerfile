@@ -2,8 +2,12 @@
 # inside it) using the full JDK and Maven, then copy only what's needed to run into a
 # smaller JRE image. Build with `docker build -t helpdesk .`
 
+# Cross-building (e.g. linux/arm64 for Fargate on an x86 CI runner): stages 1 and 2 run on the
+# BUILD machine's own platform, because their output (static files, a jar) is the same for every
+# CPU. Only stage 3 is built for the target platform, so only it runs under emulation.
+
 # ---- Stage 1: build the React UI ----
-FROM node:24-alpine AS frontend
+FROM --platform=$BUILDPLATFORM node:24-alpine AS frontend
 WORKDIR /frontend
 
 # package files first: `npm ci` (a clean install of exactly what package-lock.json
@@ -14,7 +18,7 @@ COPY frontend/ ./
 RUN npm run build
 
 # ---- Stage 2: build the jar ----
-FROM eclipse-temurin:25-jdk AS build
+FROM --platform=$BUILDPLATFORM eclipse-temurin:25-jdk AS build
 WORKDIR /workspace
 
 # Maven wrapper and pom first, then sources: Docker caches each step, so source

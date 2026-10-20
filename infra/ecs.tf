@@ -15,6 +15,15 @@ resource "aws_cloudwatch_log_group" "ecs" {
 # any change registers a new revision (Terraform shows it as "must be replaced") and deregisters
 # the old one. Registered revisions cost nothing; only running tasks do.
 
+# The newest image in ECR, i.e. the last one the deploy workflow pushed from main. Bringing the
+# app up therefore always runs the latest build. While it runs, the deploy workflow rolls new
+# images out itself (see aws_ecs_service.app); the next apply then shows this task definition
+# being replaced with the new tag, which only re-registers what's already deployed.
+data "aws_ecr_image" "app" {
+  repository_name = aws_ecr_repository.app.name
+  most_recent     = true
+}
+
 locals {
   # Every container logs to the same group, told apart by stream prefix
   log_configuration = {
@@ -73,7 +82,7 @@ resource "aws_ecs_task_definition" "app" {
   }
   container_definitions = jsonencode([{
     name         = "app"
-    image        = "${aws_ecr_repository.app.repository_url}:${var.app_image_tag}"
+    image        = "${aws_ecr_repository.app.repository_url}:${data.aws_ecr_image.app.image_tags[0]}"
     essential    = true
     portMappings = [{ containerPort = 8080, protocol = "tcp" }]
     environment  = local.env.app

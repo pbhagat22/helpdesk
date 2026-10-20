@@ -47,9 +47,10 @@ bucket. **Never run `terraform destroy`**: it would also delete those (ECR refus
 | File | What |
 |---|---|
 | `terraform.tf`, `providers.tf` | Versions, the S3 state backend, region, account guardrail, default tags |
-| `variables.tf` | `running` and `app_image_tag` |
+| `variables.tf` | `running` |
 | `data.tf` | Read-only lookups: account, default VPC and subnets, CloudFront's IP prefix list |
 | `ecr.tf`, `iam.tf`, `network.tf`, `ecs.tf`, `cloudfront.tf` | Permanent resources |
+| `github.tf` | GitHub OIDC provider and the deploy role CI assumes |
 | `database.tf`, `services.tf`, `alb.tf` | Resources that only exist while `running` |
 
 The secrets are SSM SecureStrings `/helpdesk/{db-password,jwt-secret,admin-password}`, created by hand
@@ -57,11 +58,18 @@ and deliberately not managed here, so their values never land in the state. ECS 
 app's environment through the execution role; RDS gets its password through an ephemeral resource
 and the write-only `password_wo` argument.
 
-## A new image
+## Deploying a new image
 
-Images are tagged with the git short sha (tags are immutable). Push a plain single-arch image; without
-the attestation flags, Docker pushes an image index plus a provenance manifest, which breaks scanning
-by tag and the lifecycle count:
+Normally CI does it: every push to `main` that passes the tests runs the `deploy` job in
+[ci.yml](../.github/workflows/ci.yml). It logs in to AWS through GitHub OIDC as the role
+`helpdesk-github-deploy` ([github.tf](github.tf); there are no AWS keys in GitHub), builds an ARM64
+image, pushes it as `helpdesk:<7-char git sha>`, and, if the app is running, rolls the ECS service
+onto it. When the app isn't running, the push is all it does: the app task definition here always
+uses the newest image in ECR, so the next `terraform apply -var running=true` starts it.
+
+By hand (e.g. to test an image before pushing to main), push a plain single-arch image. Without the
+attestation flags, Docker pushes an image index plus a provenance manifest, which breaks scanning by
+tag and the lifecycle count:
 
 ```bash
 REGISTRY=936303390305.dkr.ecr.us-east-2.amazonaws.com
@@ -70,8 +78,9 @@ docker build --pull --platform linux/arm64 --provenance=false --sbom=false -t $R
 docker push $REGISTRY/helpdesk:$(git rev-parse --short HEAD)
 ```
 
-Then set `app_image_tag` in `variables.tf` to that tag and apply: the app task definition gets a new
-revision, and if the app is running, ECS replaces its task.
+After a deploy while running, the next plan shows the app task definition being replaced with the
+new tag. That only re-registers what's already deployed: the service ignores Terraform's task
+definition once created (`ignore_changes`), so Terraform never rolls the app back to an older image.
 
 ## State
 

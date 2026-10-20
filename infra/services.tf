@@ -79,4 +79,11 @@ resource "aws_ecs_service" "app" {
   # creating once it is) and Kafka/Elasticsearch on their way, and the target group needs its
   # listener before ECS can attach to it.
   depends_on = [aws_db_instance.db, aws_ecs_service.infra, aws_lb_listener.http]
+
+  # Terraform sets the task definition when it creates the service. After that, the deploy
+  # workflow owns it: it registers a revision with the new image and points the service at it.
+  # Without this, the next apply would see that as drift and roll the app back.
+  lifecycle {
+    ignore_changes = [task_definition]
+  }
 }

@@ -1,6 +1,7 @@
 # Continuous integration: on every push and pull request, build and test everything.
-# A red cross on a commit means something in it is broken; nothing gets deployed from here
-# yet (deployment comes in roadmap stage 8).
+# A red cross on a commit means something in it is broken.
+# Continuous deployment: a push to main that passes the tests is built for ARM64, pushed to ECR,
+# and rolled out to the app on ECS if it's running (see infra/github.tf for the AWS side).
 name: CI
 
 on:
@@ -70,8 +71,10 @@ jobs:
 
   docker:
     name: Docker image
-    # Only worth building the image once the code itself is known to be good.
+    # Only worth building the image once the code itself is known to be good. Pull requests
+    # only: on main, the deploy job builds (and pushes) the real image instead.
     needs: [backend, frontend]
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -80,9 +83,8 @@ jobs:
       # Buildx is Docker's builder with BuildKit (needed for the Dockerfile's cache mounts).
       - uses: docker/setup-buildx-action@v4
 
-      # Proves the Dockerfile still builds. push: false, the image is thrown away; publishing
-      # it to a registry is part of deployment (stage 8). The gha cache reuses unchanged
-      # layers from earlier runs, so most builds only redo the application layer.
+      # Proves the Dockerfile still builds. push: false, the image is thrown away. The gha cache
+      # reuses unchanged layers from earlier runs, so most builds only redo the application layer.
       - name: Build image
         uses: docker/build-push-action@v7
         with:
@@ -91,3 +93,91 @@ jobs:
           tags: helpdesk:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy (ECR + ECS)
+    needs: [backend, frontend]
+    # Only pushes to main. The AWS role's trust policy enforces the same thing on its side.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # id-token: write lets this job ask GitHub for an OIDC token, which AWS exchanges for
+    # temporary credentials. No AWS keys are stored in GitHub.
+    permissions:
+      contents: read
+      id-token: write
+    # One deploy at a time, and never cancel one halfway (unlike the CI concurrency above):
+    # a newer push waits, then deploys after it.
+    concurrency:
+      group: deploy
+      cancel-in-progress: false
+    env:
+      AWS_REGION: us-east-2
+      CLUSTER: helpdesk
+      SERVICE: app
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          # Not a secret: knowing a role's ARN gives nothing without a token its trust policy accepts
+          role-to-assume: arn:aws:iam::936303390305:role/helpdesk-github-deploy
+          aws-region: ${{ env.AWS_REGION }}
+
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # Same tag format as a local `git rev-parse --short HEAD` (7 characters)
+      - id: image
+        run: echo "ref=${{ steps.ecr.outputs.registry }}/helpdesk:${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      # QEMU emulates ARM64 for the Dockerfile's last stage; the Node and Maven stages run natively
+      # (FROM --platform=$BUILDPLATFORM)
+      - uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@v4
+
+      # A plain single-arch image: provenance/SBOM attestations would turn it into an image index,
+      # which breaks ECR's scanning by tag and the lifecycle policy's image count.
+      - name: Build and push image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/arm64
+          push: true
+          provenance: false
+          sbom: false
+          tags: ${{ steps.image.outputs.ref }}
+          cache-from: type=gha,scope=arm64
+          cache-to: type=gha,scope=arm64,mode=max
+
+      # The hourly-billed resources usually don't exist (infra/README.md). Then the push is the
+      # whole deploy: the next `terraform apply -var running=true` starts the newest image.
+      # Otherwise: copy the running task definition with the new image, register it as a new
+      # revision, point the service at it, and wait until ECS has replaced the task and the
+      # load balancer reports it healthy (ECS keeps the old task until then).
+      - name: Roll out to ECS if running
+        env:
+          IMAGE: ${{ steps.image.outputs.ref }}
+        run: |
+          status=$(aws ecs describe-services --cluster $CLUSTER --services $SERVICE \
+            --query 'services[0].status' --output text)
+          if [ "$status" != "ACTIVE" ]; then
+            echo "::notice::The app isn't running; $IMAGE is pushed and will be used at the next bring-up."
+            exit 0
+          fi
+          current=$(aws ecs describe-services --cluster $CLUSTER --services $SERVICE \
+            --query 'services[0].taskDefinition' --output text)
+          # Keep only the fields register-task-definition accepts (describe also returns
+          # read-only ones like revision, status and registeredAt)
+          aws ecs describe-task-definition --task-definition "$current" --query taskDefinition \
+            | jq --arg image "$IMAGE" '.containerDefinitions[0].image = $image
+                | {family, executionRoleArn, networkMode, containerDefinitions, requiresCompatibilities,
+                   cpu, memory, runtimePlatform}' > task-definition.json
+          revision=$(aws ecs register-task-definition --cli-input-json file://task-definition.json \
+            --query taskDefinition.taskDefinitionArn --output text)
+          aws ecs update-service --cluster $CLUSTER --service $SERVICE --task-definition "$revision" \
+            --query service.taskDefinition --output text
+          aws ecs wait services-stable --cluster $CLUSTER --services $SERVICE
+          echo "::notice::Deployed $IMAGE ($revision)"

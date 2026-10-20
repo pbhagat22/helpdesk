@@ -1,9 +1,3 @@
-variable "app_image_tag" {
-  description = "Tag (git short sha) of the helpdesk image in ECR that the app task definition runs"
-  type        = string
-  default     = "e69e7c8"
-}
-
 variable "running" {
   description = <<-EOT
     Whether the hourly-billed resources exist: RDS, the private DNS namespace, the three ECS services
