@@ -16,11 +16,15 @@ resource "aws_cloudfront_distribution" "app" {
   http_version    = "http2and3"
   is_ipv6_enabled = true
 
+  # Don't wait the few minutes until every edge location has the new origin. The app takes longer
+  # than that to start anyway, and teardown shouldn't wait for it.
+  wait_for_deployment = false
+
   origin {
     origin_id = "alb"
-    # The last ALB's DNS name. The ALB is recreated each session with a new name; step 8.3 will
-    # point this at the ALB resource instead of a fixed string.
-    domain_name = "helpdesk-413068722.us-east-2.elb.amazonaws.com"
+    # The ALB gets a new DNS name each time it's created. While it doesn't exist, the origin is a
+    # name that can never resolve (.invalid is reserved for that), so CloudFront answers 502.
+    domain_name = var.running ? aws_lb.app[0].dns_name : "helpdesk-offline.invalid"
     custom_origin_config {
       http_port              = 80
       https_port             = 443
