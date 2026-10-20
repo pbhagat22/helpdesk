@@ -118,18 +118,24 @@ The [Dockerfile](Dockerfile) is multi-stage. A Node stage builds the React UI (s
 
 No linter or formatter is configured. Tests need Docker running (OrbStack is installed), but not `docker compose`. Testcontainers starts its own Postgres.
 
-## AWS (roadmap stage 7, in progress)
+## AWS (roadmap stage 7)
 
-Built by hand in region **us-west-2**, before Terraform automates it in stage 8. The user runs AWS commands themselves (CLI profile `helpdesk`, through IAM Identity Center: `aws sso login --profile helpdesk`); Claude verifies with read-only commands. Resources that bill hourly are created and **deleted every session**; only the ECR repository stays.
+Built by hand before Terraform automates it in stage 8. [aws/README.md](aws/README.md) has the bring-up and teardown commands, and `source aws/env.sh` looks up every resource ID by name.
 
-- **ECR** repository `helpdesk` has immutable tags (git short sha), a lifecycle policy keeping 5 images, and registry-wide BASIC scan-on-push (a registry-level rule; the repository-level `scanOnPush` flag isn't honoured). Push a plain single-arch image; without the attestation flags, Docker pushes an image index plus a provenance manifest, which breaks scanning by tag and the lifecycle count:
+- **Account and access:** the sign-up created an AWS Organization. The work happens in member account "Try Catch Finally" (936303390305), not in the management account. An organization SCP **denies every region except us-east-2**. The CLI profile `helpdesk` is IAM user `pbuser1` with an access key (`aws login` failed with this sign-up's federated setup). The user runs AWS commands themselves; Claude verifies with read-only commands.
+- **Costs:** resources that bill hourly (RDS, ECS services, ALB, Cloud Map namespace) are created and **deleted every session**. The rest stays: ECR, IAM role, SSM parameters, security groups, DB subnet group, cluster, task definitions, log group and the CloudFront distribution.
+- **ECR** repository `helpdesk` has immutable tags (git short sha), a lifecycle policy keeping 5 images, and a registry-wide BASIC scan-on-push rule (a registry-level rule; the repository-level `scanOnPush` flag isn't honoured). Push a plain single-arch image; without the attestation flags, Docker pushes an image index plus a provenance manifest, which breaks scanning by tag and the lifecycle count:
   ```bash
-  REGISTRY=$(aws sts get-caller-identity --query Account --output text).dkr.ecr.us-west-2.amazonaws.com
+  REGISTRY=$(aws sts get-caller-identity --query Account --output text).dkr.ecr.us-east-2.amazonaws.com
   aws ecr get-login-password | docker login --username AWS --password-stdin $REGISTRY
   docker build --pull --platform linux/arm64 --provenance=false --sbom=false -t $REGISTRY/helpdesk:$(git rev-parse --short HEAD) .
   docker push $REGISTRY/helpdesk:$(git rev-parse --short HEAD)
   ```
-- **Planned architecture:** default VPC with public subnets and **no NAT gateway**; ALB → ECS Fargate (ARM64) services `app`, `kafka` (apache/kafka) and `elasticsearch`, the last two reached through Cloud Map DNS. Their data isn't durable, which the design tolerates: Postgres is the source of truth and search can be rebuilt with `/api/admin/search/reindex`. RDS Postgres `db.t4g.micro` is reachable only from the app's security group. Secrets (DB password, `HELPDESK_JWT_SECRET`, admin password) live in SSM Parameter Store SecureStrings. Logs go to CloudWatch. HTTPS is likely via CloudFront in front of the ALB.
+- **Architecture:** CloudFront (HTTPS, `https://d1fpqs2kiuwucp.cloudfront.net`, caching off, all headers but `Host` forwarded) → ALB (HTTP; its security group only allows CloudFront's managed prefix list) → ECS Fargate ARM64 service `app` (0.5 vCPU / 2 GB) in the default VPC's public subnets, with public IPs and **no NAT gateway**.
+  - **Kafka and Elasticsearch** (`apache/kafka`, `elasticsearch`) run as their own Fargate services, reached as `kafka.helpdesk.local:9092` and `elasticsearch.helpdesk.local:9200` through Cloud Map DNS. Kafka advertises that name. Their data isn't durable, which the design tolerates: Postgres is the source of truth, and search can be rebuilt with `/api/admin/search/reindex`.
+  - **RDS** Postgres 18 `db.t4g.micro` is private, single-AZ, with no backups, and is reachable only from the app's security group. Its endpoint is stable across recreation, so it's fixed in `aws/ecs/app.json`.
+  - **Secrets** (`/helpdesk/db-password`, `jwt-secret`, `admin-password`) are SSM SecureStrings, injected by the task execution role through the task definition's `secrets` section. The admin is `admin@example.com`.
+  - **Logs** go to CloudWatch `/ecs/helpdesk`.
 
 ## Configuration
 

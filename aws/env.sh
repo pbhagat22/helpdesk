@@ -18,9 +18,12 @@ ALB_ARN=$(aws elbv2 describe-load-balancers --names helpdesk \
   --query 'LoadBalancers[0].LoadBalancerArn' --output text 2>/dev/null || echo None)
 TG_ARN=$(aws elbv2 describe-target-groups --names helpdesk-app \
   --query 'TargetGroups[0].TargetGroupArn' --output text 2>/dev/null || echo None)
+CF_ID=$(aws cloudfront list-distributions \
+  --query "DistributionList.Items[?starts_with(Comment, 'helpdesk')].Id | [0]" --output text)
 
 echo "account=$ACCOUNT_ID vpc=$VPC subnets=$SUBNETS"
 echo "sg: alb=$ALB_SG app=$APP_SG db=$DB_SG infra=$INFRA_SG"
 echo "namespace=$NAMESPACE_ID"
 echo "alb=$ALB_ARN"
 echo "tg=$TG_ARN"
+echo "cloudfront=$CF_ID"

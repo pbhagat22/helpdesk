@@ -6,12 +6,19 @@ that region. The CLI profile is `helpdesk` (IAM user `pbuser1`, access key). Run
 - `env.sh`: `source` it to look up every resource ID by name (a missing one shows as `None`).
 - `iam/`: the ECS task execution role's trust policy and its SSM read policy.
 - `ecs/`: task definitions (the ECS equivalent of the services in `compose.yaml`).
+- `cloudfront/`: the distribution config used to create the HTTPS front door (only needed again if it's deleted).
+
+**The app's address is https://d1fpqs2kiuwucp.cloudfront.net** (CloudFront distribution `EIXMZUF70ITNT`).
+CloudFront terminates HTTPS with its `*.cloudfront.net` certificate and forwards to the ALB over HTTP, with
+caching off (`CachingDisabled`) and all headers except `Host` passed through (`AllViewerExceptHostHeader`).
+The ALB's security group only accepts CloudFront's managed prefix list (`pl-b6a144df`), so the ALB address
+alone doesn't answer. Between sessions, the distribution returns 502 because its ALB is gone.
 
 ## What stays between sessions (free or nearly free)
 
 ECR image, IAM role `helpdesk-ecs-execution`, SSM SecureStrings `/helpdesk/{db-password,jwt-secret,admin-password}`,
 security groups `helpdesk-{alb,app,db,infra}`, DB subnet group `helpdesk-db`, ECS cluster `helpdesk`,
-task definitions, and log group `/ecs/helpdesk` (1-day retention).
+task definitions, log group `/ecs/helpdesk` (1-day retention), and the CloudFront distribution (free tier).
 
 ## Bring it up (~15 minutes, mostly waiting for RDS)
 
@@ -65,10 +72,18 @@ aws ecs create-service --cluster helpdesk --service-name app --task-definition h
   --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$APP_SG],assignPublicIp=ENABLED}" \
   --load-balancers targetGroupArn=$TG_ARN,containerName=app,containerPort=8080 \
   --health-check-grace-period-seconds 300 --query 'service.[serviceName,status]' --output text
-aws elbv2 describe-load-balancers --names helpdesk --query 'LoadBalancers[0].DNSName' --output text
+
+# 6. Point CloudFront at the new ALB (its DNS name changes every time the ALB is recreated)
+ALB_DNS=$(aws elbv2 describe-load-balancers --names helpdesk --query 'LoadBalancers[0].DNSName' --output text)
+aws cloudfront get-distribution-config --id $CF_ID > /tmp/helpdesk-cf.json
+jq --arg d "$ALB_DNS" '.DistributionConfig | .Origins.Items[0].DomainName = $d' /tmp/helpdesk-cf.json > /tmp/helpdesk-cf-new.json
+aws cloudfront update-distribution --id $CF_ID --if-match $(jq -r .ETag /tmp/helpdesk-cf.json) \
+  --distribution-config file:///tmp/helpdesk-cf-new.json --query 'Distribution.Status' --output text
+aws cloudfront wait distribution-deployed --id $CF_ID && echo "https://$(aws cloudfront get-distribution --id $CF_ID --query Distribution.DomainName --output text)"
 ```
 
-The ALB's DNS name changes every time it is recreated. Admin login is `admin@example.com`, with the password from
+`update-distribution` replaces the whole config, so it is read, edited, and sent back with the ETag
+(`--if-match`). The ETag makes the update fail if someone else changed the distribution in between. Admin login is `admin@example.com`, with the password from
 `aws ssm get-parameter --name /helpdesk/admin-password --with-decryption --query Parameter.Value --output text`.
 The database starts empty each time.
 
