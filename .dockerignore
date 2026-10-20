@@ -8,6 +8,7 @@ frontend/dist/
 .vscode/
 .idea/
 .claude/
+infra/
 *.md
 compose.yaml
 Dockerfile
