@@ -26,8 +26,9 @@ public class AgentToolRunner {
 
 	private static final Logger log = LoggerFactory.getLogger(AgentToolRunner.class);
 
-	// What a call produced: the tool's output as JSON, or (if it failed) an error message
-	// meant for the model. Exactly one of the two is set.
+	// What a call produced: the tool's output (JSON from our own tools, whatever text an
+	// external MCP tool returned), or (if it failed) an error message meant for the model.
+	// Exactly one of the two is set.
 	public record Result(String output, String error) {
 
 		public boolean failed() {

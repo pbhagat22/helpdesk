@@ -38,8 +38,10 @@ import com.jayway.jsonpath.JsonPath;
 // with nothing mocked, walking through a typical ticket's life. Users log in for real
 // and send the token they get back, as the React UI will. Slower than
 // the slice tests, so keep these few and focused on how the pieces fit together.
-// The properties configure the bootstrap admin, as HELPDESK_ADMIN_* would in production.
-@SpringBootTest(properties = { "helpdesk.admin.email=admin@example.com", "helpdesk.admin.password=admin-password" })
+// The properties configure the bootstrap admin, as HELPDESK_ADMIN_* would in production, and
+// turn off the MCP client, so tests never call external MCP servers over the internet.
+@SpringBootTest(properties = { "helpdesk.admin.email=admin@example.com", "helpdesk.admin.password=admin-password",
+		"spring.ai.mcp.client.enabled=false" })
 @Import({ TestcontainersConfiguration.class, KafkaTestcontainersConfiguration.class,
 		ElasticsearchTestcontainersConfiguration.class, FakeBedrockConfiguration.class })
 @AutoConfigureMockMvc

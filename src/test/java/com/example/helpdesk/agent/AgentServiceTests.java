@@ -8,6 +8,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -20,6 +21,9 @@ import com.example.helpdesk.common.NotFoundException;
 import com.example.helpdesk.common.ServiceUnavailableException;
 import com.example.helpdesk.security.HelpdeskUserDetails;
 import com.example.helpdesk.user.Role;
+
+import io.modelcontextprotocol.client.McpSyncClient;
+import io.modelcontextprotocol.spec.McpSchema;
 
 import software.amazon.awssdk.services.bedrockruntime.BedrockRuntimeClient;
 import software.amazon.awssdk.services.bedrockruntime.model.ContentBlock;
@@ -85,9 +89,13 @@ class AgentServiceTests {
 
 	private final JsonMapper jsonMapper = JsonMapper.builder().build();
 
-	private final AgentService agent = new AgentService(bedrock,
-			new AiProperties("us-east-2", "small-model", "agent-model", "test-embedding-model", Duration.ofSeconds(5)),
-			jsonMapper, new AgentToolRunner(jsonMapper, List.of(tool)));
+	private final AiProperties properties = new AiProperties("us-east-2", "small-model", "agent-model",
+			"test-embedding-model", Duration.ofSeconds(5));
+
+	// No external MCP servers, except in the test that's about them
+	private final AgentService agent = new AgentService(bedrock, properties, jsonMapper,
+			new AgentToolRunner(jsonMapper, List.of(tool)),
+			new ExternalMcpTools(List.of(), new AgentProperties(null), Clock.systemUTC()));
 
 	@Test
 	void runsTheRequestedToolAndSendsTheResultBack() {
@@ -162,6 +170,62 @@ class AgentServiceTests {
 		AgentResponse result = agent.ask("?", bob);
 
 		assertThat(result.steps()).singleElement().satisfies(step -> assertThat(step.error()).isNotBlank());
+	}
+
+	// Tools from an external MCP server are offered next to ours, marked as external, and
+	// called on that server with only the model's input.
+	@Test
+	void externalMcpToolsAreOfferedMarkedAndRunOnTheirServer() {
+		AgentService withDocs = agentWithDocsServer();
+		given(bedrock.converse(any(ConverseRequest.class))).willReturn(
+				response(StopReason.TOOL_USE, toolUse("call-1", "search_docs", Map.of("search_phrase", "lambda timeout"))),
+				response(StopReason.END_TURN, ContentBlock.fromText("At most 15 minutes.")));
+
+		AgentResponse result = withDocs.ask("What's the longest a Lambda function can run?", bob);
+
+		assertThat(result.steps())
+			.containsExactly(new AgentResponse.Step("search_docs", "{\"search_phrase\":\"lambda timeout\"}", null));
+		assertThat(tool.ranAs).isNull();
+		ArgumentCaptor<ConverseRequest> requests = ArgumentCaptor.forClass(ConverseRequest.class);
+		verify(bedrock, times(2)).converse(requests.capture());
+		assertThat(requests.getAllValues().get(0).toolConfig().tools()).extracting(t -> t.toolSpec().name())
+			.containsExactly("get_ticket", "search_docs");
+		assertThat(requests.getAllValues().get(0).toolConfig().tools().get(1).toolSpec().description())
+			.isEqualTo("[External: docs] Searches the docs");
+		assertThat(requests.getAllValues().get(1).messages().get(2).content().getFirst().toolResult().content().getFirst().text())
+			.isEqualTo("Lambda: at most 15 minutes");
+	}
+
+	// Once our tools have put helpdesk data into the conversation, nothing may carry it to an
+	// external server, whatever the model decides. Calls in the same turn are still fine: the
+	// model hadn't seen any results when it made them.
+	@Test
+	void externalToolsAreBlockedAfterOurToolsReturnedData() {
+		AgentService withDocs = agentWithDocsServer();
+		given(bedrock.converse(any(ConverseRequest.class))).willReturn(
+				response(StopReason.TOOL_USE, toolUse("a", "get_ticket", Map.of("id", 5)),
+						toolUse("b", "search_docs", Map.of("search_phrase", "printer"))),
+				response(StopReason.TOOL_USE, toolUse("c", "search_docs", Map.of("search_phrase", "Printer on fire"))),
+				response(StopReason.END_TURN, ContentBlock.fromText("Done.")));
+
+		AgentResponse result = withDocs.ask("Look up ticket 5 in the docs", bob);
+
+		assertThat(result.steps()).extracting(AgentResponse.Step::error)
+			.containsExactly(null, null, AgentService.EXTERNAL_LOCKED);
+		verify(docs, times(1)).callTool(any());
+	}
+
+	private final McpSyncClient docs = mock(McpSyncClient.class);
+
+	// An agent that also has a "docs" MCP server offering one allowed tool, search_docs
+	private AgentService agentWithDocsServer() {
+		given(docs.getClientInfo()).willReturn(McpSchema.Implementation.builder("helpdesk - docs", "1.0.0").title("docs").build());
+		given(docs.listTools()).willReturn(McpSchema.ListToolsResult
+			.builder(List.of(McpSchema.Tool.builder("search_docs", Map.of("type", "object")).description("Searches the docs").build()))
+			.build());
+		given(docs.callTool(any())).willReturn(McpSchema.CallToolResult.builder().addTextContent("Lambda: at most 15 minutes").build());
+		return new AgentService(bedrock, properties, jsonMapper, new AgentToolRunner(jsonMapper, List.of(tool)),
+				new ExternalMcpTools(List.of(docs), new AgentProperties(List.of("search_docs")), Clock.systemUTC()));
 	}
 
 	// A model that never stops calling tools must not loop (and bill) forever.
