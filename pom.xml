@@ -28,6 +28,7 @@
 	</scm>
 	<properties>
 		<java.version>25</java.version>
+		<aws-sdk.version>2.57.1</aws-sdk.version>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -69,6 +70,13 @@
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-webmvc</artifactId>
+		</dependency>
+
+		<!-- AWS SDK client for the Bedrock Runtime API (Converse: one request shape for every model) -->
+		<dependency>
+			<groupId>software.amazon.awssdk</groupId>
+			<artifactId>bedrockruntime</artifactId>
+			<version>${aws-sdk.version}</version>
 		</dependency>
 
 		<dependency>

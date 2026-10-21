@@ -25,6 +25,10 @@ data "aws_ecr_image" "app" {
 }
 
 locals {
+  # The Bedrock model behind the AI assistant. One place, because the task role's IAM policy
+  # (iam.tf) only allows this model.
+  ai_model = "qwen.qwen3-32b-v1:0"
+
   # Every container logs to the same group, told apart by stream prefix
   log_configuration = {
     for name in ["app", "kafka", "elasticsearch"] : name => {
@@ -45,6 +49,7 @@ locals {
       KAFKA_BOOTSTRAP_SERVERS = "kafka.helpdesk.local:9092"
       ELASTICSEARCH_URIS      = "http://elasticsearch.helpdesk.local:9200"
       HELPDESK_ADMIN_EMAIL    = "admin@example.com"
+      HELPDESK_AI_MODEL       = local.ai_model
     }
     kafka = {
       KAFKA_NODE_ID                                  = "1"
@@ -76,6 +81,7 @@ resource "aws_ecs_task_definition" "app" {
   cpu                      = "512"
   memory                   = "2048"
   execution_role_arn       = aws_iam_role.ecs_execution.arn
+  task_role_arn            = aws_iam_role.app_task.arn
   runtime_platform {
     cpu_architecture        = "ARM64"
     operating_system_family = "LINUX"

@@ -81,11 +81,11 @@ resource "aws_iam_role_policy" "github_deploy" {
         Resource = "*"
       },
       {
-        # Registering a task definition that names the execution role counts as "passing" it
-        Sid      = "PassExecutionRole"
+        # Registering a task definition that names a role counts as "passing" it
+        Sid      = "PassTaskRoles"
         Effect   = "Allow"
         Action   = "iam:PassRole"
-        Resource = aws_iam_role.ecs_execution.arn
+        Resource = [aws_iam_role.ecs_execution.arn, aws_iam_role.app_task.arn]
         Condition = {
           StringEquals = { "iam:PassedToService" = "ecs-tasks.amazonaws.com" }
         }

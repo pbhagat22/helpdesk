@@ -54,6 +54,12 @@ export interface Activity {
   occurredAt: string
 }
 
+// Claude's summary of a ticket and a draft reply (staff only, POST /tickets/{id}/assist)
+export interface AssistResponse {
+  summary: string
+  suggestedReply: string
+}
+
 export interface TokenResponse {
   accessToken: string
   tokenType: string

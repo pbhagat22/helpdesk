@@ -173,7 +173,7 @@ jobs:
           # read-only ones like revision, status and registeredAt)
           aws ecs describe-task-definition --task-definition "$current" --query taskDefinition \
             | jq --arg image "$IMAGE" '.containerDefinitions[0].image = $image
-                | {family, executionRoleArn, networkMode, containerDefinitions, requiresCompatibilities,
+                | {family, executionRoleArn, taskRoleArn, networkMode, containerDefinitions, requiresCompatibilities,
                    cpu, memory, runtimePlatform}' > task-definition.json
           revision=$(aws ecs register-task-definition --cli-input-json file://task-definition.json \
             --query taskDefinition.taskDefinitionArn --output text)

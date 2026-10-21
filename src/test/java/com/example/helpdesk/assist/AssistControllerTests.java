@@ -1,0 +1,65 @@
+package com.example.helpdesk.assist;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpStatus;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.servlet.assertj.MockMvcTester;
+
+import com.example.helpdesk.common.ServiceUnavailableException;
+import com.example.helpdesk.security.HelpdeskUserDetails;
+import com.example.helpdesk.security.SecurityConfig;
+import com.example.helpdesk.user.Role;
+
+@WebMvcTest(AssistController.class)
+@Import(SecurityConfig.class)
+class AssistControllerTests {
+
+	private static final HelpdeskUserDetails alice = new HelpdeskUserDetails(1L, "alice@example.com", "unused",
+			Role.CUSTOMER);
+
+	private static final HelpdeskUserDetails bob = new HelpdeskUserDetails(2L, "bob@example.com", "unused",
+			Role.AGENT);
+
+	@Autowired
+	private MockMvcTester mvc;
+
+	@MockitoBean
+	private TicketAssistService assistService;
+
+	@Test
+	void agentGetsSummaryAndSuggestedReply() {
+		given(assistService.suggest(1L, bob)).willReturn(new AssistResponse("Printer smoking.", "Please unplug it."));
+
+		assertThat(mvc.post().uri("/api/tickets/1/assist").with(user(bob))).hasStatusOk()
+			.bodyJson()
+			.extractingPath("$.suggestedReply")
+			.isEqualTo("Please unplug it.");
+	}
+
+	@Test
+	void customerIsForbidden() {
+		assertThat(mvc.post().uri("/api/tickets/1/assist").with(user(alice))).hasStatus(HttpStatus.FORBIDDEN);
+		verifyNoInteractions(assistService);
+	}
+
+	@Test
+	void bedrockDownIsProblemDetail503() {
+		given(assistService.suggest(1L, bob))
+			.willThrow(new ServiceUnavailableException("The AI assistant is unavailable right now", null));
+
+		assertThat(mvc.post().uri("/api/tickets/1/assist").with(user(bob)))
+			.hasStatus(HttpStatus.SERVICE_UNAVAILABLE)
+			.bodyJson()
+			.extractingPath("$.detail")
+			.isEqualTo("The AI assistant is unavailable right now");
+	}
+
+}

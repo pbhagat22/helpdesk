@@ -9,6 +9,7 @@ import {
   PRIORITIES,
   TICKET_STATUSES,
   type Activity,
+  type AssistResponse,
   type Comment,
   type Priority,
   type Ticket,
@@ -23,6 +24,8 @@ export function TicketDetailPage() {
   const { data: ticket, error, reload: reloadTicket } = useApi<Ticket>(`/tickets/${id}`)
   const { data: comments, reload: reloadComments } = useApi<Comment[]>(`/tickets/${id}/comments`)
   const { data: history, reload: reloadHistory } = useApi<Activity[]>(`/tickets/${id}/activity`)
+  // The comment being written lives here, so the AI assistant can fill it with its draft
+  const [commentBody, setCommentBody] = useState('')
 
   // The history is built from Kafka events in the background, so right after a change it may
   // not include it yet ("eventually consistent"). Reload now, and once more a moment later.
@@ -74,6 +77,8 @@ export function TicketDetailPage() {
         />
       )}
 
+      {isStaff(user?.role) && <AiAssistant ticketId={ticket.id} onUseReply={setCommentBody} />}
+
       <h2>Conversation</h2>
       {comments?.length === 0 && <p className="hint">No comments yet.</p>}
       <ul className="comments">
@@ -90,6 +95,8 @@ export function TicketDetailPage() {
       </ul>
       <CommentForm
         ticketId={ticket.id}
+        body={commentBody}
+        setBody={setCommentBody}
         onAdded={() => {
           reloadComments()
           refreshHistory()
@@ -207,8 +214,61 @@ function StaffControls({ ticket, onSaved }: { ticket: Ticket; onSaved: () => voi
   )
 }
 
-function CommentForm({ ticketId, onAdded }: { ticketId: number; onAdded: () => void }) {
-  const [body, setBody] = useState('')
+// Staff only: asks Claude (through the backend) for a summary and a draft reply.
+// The draft is only copied into the comment box; an agent reads and edits it before sending.
+function AiAssistant({ ticketId, onUseReply }: { ticketId: number; onUseReply: (reply: string) => void }) {
+  const [result, setResult] = useState<AssistResponse | null>(null)
+  const [error, setError] = useState<unknown>(null)
+  const [busy, setBusy] = useState(false)
+
+  async function handleAsk() {
+    setBusy(true)
+    setError(null)
+    try {
+      setResult(await api<AssistResponse>(`/tickets/${ticketId}/assist`, { method: 'POST' }))
+    } catch (e) {
+      setError(e)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="card ai-assistant">
+      <div className="ai-assistant-head">
+        <strong>AI assistant</strong>
+        <button type="button" className="secondary" onClick={handleAsk} disabled={busy}>
+          {busy ? 'Thinking…' : result ? 'Try again' : 'Summarise and draft a reply'}
+        </button>
+      </div>
+      <ErrorMessage error={error} />
+      {result && (
+        <>
+          <h3>Summary</h3>
+          <p>{result.summary}</p>
+          <h3>Suggested reply</h3>
+          <p className="suggested-reply">{result.suggestedReply}</p>
+          <button type="button" onClick={() => onUseReply(result.suggestedReply)}>
+            Use this reply
+          </button>
+          <p className="hint">AI-generated. Check it before sending.</p>
+        </>
+      )}
+    </div>
+  )
+}
+
+function CommentForm({
+  ticketId,
+  body,
+  setBody,
+  onAdded,
+}: {
+  ticketId: number
+  body: string
+  setBody: (body: string) => void
+  onAdded: () => void
+}) {
   const [error, setError] = useState<unknown>(null)
   const [busy, setBusy] = useState(false)
 

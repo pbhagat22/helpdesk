@@ -441,3 +441,26 @@ mark {
     width: 100%;
   }
 }
+
+/* AI assistant panel on the ticket page (staff only) */
+.ai-assistant {
+  margin-top: 1rem;
+  border-left: 4px solid var(--accent);
+}
+.ai-assistant-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+.ai-assistant h3 {
+  font-size: 0.9rem;
+  margin: 1rem 0 0.25rem;
+  color: var(--muted);
+}
+.ai-assistant p {
+  margin: 0 0 0.5rem;
+}
+.suggested-reply {
+  white-space: pre-wrap; /* replies usually have paragraphs */
+}
