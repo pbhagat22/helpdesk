@@ -57,7 +57,10 @@ public class TicketAssistService {
 
 			Don't invent facts: no account details, refunds, deadlines or fixes that the conversation \
 			or the articles don't support. If the agent needs more information from the customer, the \
-			reply should ask for it. Write the reply in the customer's language.""";
+			reply should ask for it. Write the reply in the customer's language.
+
+			The reply is posted as a comment under the agent's own name, so end it without a closing \
+			or signature, and never use placeholders like [Name] or [Your Company].""";
 
 	// The answer's JSON schema. The descriptions are read by the model, so they're
 	// instructions as much as documentation.

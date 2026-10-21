@@ -29,6 +29,7 @@
 	<properties>
 		<java.version>25</java.version>
 		<aws-sdk.version>2.57.1</aws-sdk.version>
+		<spring-ai.version>2.0.1</spring-ai.version>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -77,6 +78,14 @@
 			<groupId>software.amazon.awssdk</groupId>
 			<artifactId>bedrockruntime</artifactId>
 			<version>${aws-sdk.version}</version>
+		</dependency>
+
+		<!-- MCP server (Model Context Protocol) on Spring MVC: the MCP Java SDK plus Spring AI's
+		     auto-configuration of the HTTP endpoint. Not managed by Boot, hence the version. -->
+		<dependency>
+			<groupId>org.springframework.ai</groupId>
+			<artifactId>spring-ai-starter-mcp-server-webmvc</artifactId>
+			<version>${spring-ai.version}</version>
 		</dependency>
 
 		<dependency>

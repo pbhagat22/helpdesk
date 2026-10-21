@@ -63,6 +63,10 @@ public class SecurityConfig {
 			// Spring's error page (so error responses aren't replaced by a 401)
 			.requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login").permitAll()
 			.requestMatchers("/actuator/health/**", "/error").permitAll()
+			// The MCP server (mcp package) isn't a controller, so there's no method to put
+			// @PreAuthorize on: its role rule lives here. Staff only, like /api/agent/ask.
+			// Before "/api/**", because the first matching rule wins.
+			.requestMatchers("/api/mcp").hasAnyRole("AGENT", "ADMIN")
 			// The rest of the API requires a logged-in user. Which roles may call what is
 			// decided per endpoint with @PreAuthorize on the controller methods.
 			.requestMatchers("/api/**").authenticated()

@@ -3,8 +3,6 @@ package com.example.helpdesk.agent;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
@@ -12,8 +10,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import com.example.helpdesk.assist.AiProperties;
-import com.example.helpdesk.common.BadRequestException;
-import com.example.helpdesk.common.NotFoundException;
 import com.example.helpdesk.common.ServiceUnavailableException;
 import com.example.helpdesk.security.HelpdeskUserDetails;
 
@@ -34,7 +30,6 @@ import software.amazon.awssdk.services.bedrockruntime.model.ToolResultContentBlo
 import software.amazon.awssdk.services.bedrockruntime.model.ToolResultStatus;
 import software.amazon.awssdk.services.bedrockruntime.model.ToolSpecification;
 import software.amazon.awssdk.services.bedrockruntime.model.ToolUseBlock;
-import tools.jackson.core.JacksonException;
 import tools.jackson.databind.json.JsonMapper;
 
 // An "agent": the model answers a staff member's question by calling our tools (AgentTool
@@ -87,15 +82,14 @@ public class AgentService {
 
 	private final JsonMapper jsonMapper;
 
-	private final Map<String, AgentTool<?>> tools;
+	private final AgentToolRunner toolRunner;
 
-	// Spring injects every AgentTool bean in the application: adding a tool = adding a @Component
 	public AgentService(BedrockRuntimeClient bedrock, AiProperties properties, JsonMapper jsonMapper,
-			List<AgentTool<?>> tools) {
+			AgentToolRunner toolRunner) {
 		this.bedrock = bedrock;
 		this.properties = properties;
 		this.jsonMapper = jsonMapper;
-		this.tools = tools.stream().collect(Collectors.toMap(AgentTool::name, Function.identity()));
+		this.toolRunner = toolRunner;
 	}
 
 	public AgentResponse ask(String question, HelpdeskUserDetails me) {
@@ -167,7 +161,7 @@ public class AgentService {
 	// Describes every tool to the model. Its input schema is our JSON text, as a Document.
 	private ToolConfiguration toolConfiguration() {
 		return ToolConfiguration.builder()
-			.tools(tools.values()
+			.tools(toolRunner.tools()
 				.stream()
 				.map(tool -> Tool.fromToolSpec(ToolSpecification.builder()
 					.name(tool.name())
@@ -182,46 +176,13 @@ public class AgentService {
 	// (status ERROR) and can try something else, e.g. another ticket number.
 	private ToolResultBlock runTool(ToolUseBlock toolUse, HelpdeskUserDetails me, List<AgentResponse.Step> steps) {
 		Object rawInput = Documents.toJava(toolUse.input());
-		String inputJson = jsonMapper.writeValueAsString(rawInput);
-		ToolResultBlock.Builder result = ToolResultBlock.builder().toolUseId(toolUse.toolUseId());
-		AgentTool<?> tool = tools.get(toolUse.name());
-		try {
-			if (tool == null) {
-				throw new IllegalArgumentException("There is no tool called " + toolUse.name());
-			}
-			Object output = invoke(tool, rawInput, me);
-			steps.add(new AgentResponse.Step(toolUse.name(), inputJson, null));
-			return result.content(ToolResultContentBlock.fromText(jsonMapper.writeValueAsString(output))).build();
+		AgentToolRunner.Result result = toolRunner.run(toolUse.name(), rawInput, me);
+		steps.add(new AgentResponse.Step(toolUse.name(), jsonMapper.writeValueAsString(rawInput), result.error()));
+		ToolResultBlock.Builder block = ToolResultBlock.builder().toolUseId(toolUse.toolUseId());
+		if (result.failed()) {
+			return block.status(ToolResultStatus.ERROR).content(ToolResultContentBlock.fromText(result.error())).build();
 		}
-		catch (RuntimeException ex) {
-			String error = errorMessage(ex);
-			steps.add(new AgentResponse.Step(toolUse.name(), inputJson, error));
-			return result.status(ToolResultStatus.ERROR).content(ToolResultContentBlock.fromText(error)).build();
-		}
-	}
-
-	// Converts the model's input (a Map) into the tool's input record; Jackson rejects
-	// wrong types and unknown enum values, which become an error result.
-	private <I> Object invoke(AgentTool<I> tool, Object rawInput, HelpdeskUserDetails me) {
-		I input;
-		try {
-			input = jsonMapper.convertValue(rawInput != null ? rawInput : Map.of(), tool.inputType());
-		}
-		catch (JacksonException ex) {
-			throw new IllegalArgumentException("Invalid input for " + tool.name() + ": " + ex.getOriginalMessage());
-		}
-		return tool.run(input, me);
-	}
-
-	// Our own exceptions have messages meant for users; anything else is a bug, so log it and
-	// tell the model only that it failed.
-	private static String errorMessage(RuntimeException ex) {
-		if (ex instanceof NotFoundException || ex instanceof BadRequestException
-				|| ex instanceof ServiceUnavailableException || ex instanceof IllegalArgumentException) {
-			return ex.getMessage();
-		}
-		log.warn("Agent tool failed", ex);
-		return "The tool failed because of an internal error";
+		return block.content(ToolResultContentBlock.fromText(result.output())).build();
 	}
 
 }

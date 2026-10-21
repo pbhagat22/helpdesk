@@ -353,6 +353,64 @@ class HelpdeskFlowTests {
 			.hasStatus(HttpStatus.FORBIDDEN);
 	}
 
+	// The MCP server speaks JSON-RPC at /api/mcp: "tools/list" describes the agent's tools,
+	// "tools/call" runs one as the token's user. A tool failure is a normal result with
+	// isError, so the client's model can react to it.
+	@Test
+	void mcpClientsCanListAndCallTheAgentTools() throws Exception {
+		RequestPostProcessor admin = login("admin@example.com", "admin-password");
+		RequestPostProcessor olga = register("flow-olga@example.com", "Olga", "olga-password");
+		long ticketId = createAndGetId("/api/tickets", olga, """
+				{"title": "Scanner jammed", "description": "Paper stuck in the feeder", "priority": "LOW"}
+				""");
+
+		assertThat(mcp(admin, """
+				{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
+				""")).hasStatus(HttpStatus.OK)
+			.bodyJson()
+			.extractingPath("$.result.tools[*].name")
+			.asArray()
+			.containsExactlyInAnyOrder("list_tickets", "search_tickets", "get_ticket", "find_users",
+					"search_knowledge_base");
+
+		MvcTestResult found = mcp(admin, """
+				{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "get_ticket", "arguments": {"id": %d}}}
+				""".formatted(ticketId));
+		assertThat(found).hasStatus(HttpStatus.OK).bodyJson().extractingPath("$.result.isError").isEqualTo(false);
+		// The tool's output is JSON inside a text block, as in our own agent
+		String output = JsonPath.read(found.getResponse().getContentAsString(), "$.result.content[0].text");
+		assertThat(JsonPath.<String>read(output, "$.ticket.title")).isEqualTo("Scanner jammed");
+
+		MvcTestResult missing = mcp(admin, """
+				{"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "get_ticket", "arguments": {"id": 999999}}}
+				""");
+		assertThat(missing).bodyJson().extractingPath("$.result.isError").isEqualTo(true);
+		assertThat(missing).bodyJson().extractingPath("$.result.content[0].text").asString().contains("999999");
+
+		// Staff only, and never without a token
+		assertThat(mcp(olga, """
+				{"jsonrpc": "2.0", "id": 4, "method": "tools/list"}
+				""")).hasStatus(HttpStatus.FORBIDDEN);
+		assertThat(mvc.post()
+			.uri("/api/mcp")
+			.accept(MediaType.APPLICATION_JSON, MediaType.TEXT_EVENT_STREAM)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("""
+					{"jsonrpc": "2.0", "id": 5, "method": "tools/list"}
+					""")).hasStatus(HttpStatus.UNAUTHORIZED);
+	}
+
+	// MCP clients must accept both JSON and an event stream (the server may answer with either)
+	private MvcTestResult mcp(RequestPostProcessor user, String json) {
+		return mvc.post()
+			.uri("/api/mcp")
+			.with(user)
+			.accept(MediaType.APPLICATION_JSON, MediaType.TEXT_EVENT_STREAM)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(json)
+			.exchange();
+	}
+
 	// Knowledge base: staff write, everyone searches by meaning. With the fake embeddings
 	// (FakeBedrockConfiguration) "meaning" is just shared words, so this checks the plumbing:
 	// chunking, pgvector storage, the <=> query and the similarity threshold.
