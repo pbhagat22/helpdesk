@@ -6,6 +6,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 
 import java.time.Instant;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -44,12 +45,12 @@ class AssistControllerTests {
 
 	@Test
 	void agentGetsSummaryAndSuggestedReply() {
-		given(assistService.suggest(1L, bob)).willReturn(new AssistResponse("Printer smoking.", "Please unplug it."));
+		given(assistService.suggest(1L, bob)).willReturn(new AssistResponse("Printer smoking.", "Please unplug it.",
+				List.of(new AssistResponse.Source(7L, "Printer safety"))));
 
-		assertThat(mvc.post().uri("/api/tickets/1/assist").with(user(bob))).hasStatusOk()
-			.bodyJson()
-			.extractingPath("$.suggestedReply")
-			.isEqualTo("Please unplug it.");
+		var response = assertThat(mvc.post().uri("/api/tickets/1/assist").with(user(bob))).hasStatusOk().bodyJson();
+		response.extractingPath("$.suggestedReply").isEqualTo("Please unplug it.");
+		response.extractingPath("$.sources[0].title").isEqualTo("Printer safety");
 	}
 
 	@Test

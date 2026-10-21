@@ -347,6 +347,17 @@ function AiAssistant({ ticketId, onUseReply }: { ticketId: number; onUseReply: (
           <p>{result.summary}</p>
           <h3>Suggested reply</h3>
           <p className="suggested-reply">{result.suggestedReply}</p>
+          {result.sources.length > 0 && (
+            <p className="hint">
+              Based on:{' '}
+              {result.sources.map((source, i) => (
+                <span key={source.id}>
+                  {i > 0 && ', '}
+                  <Link to={`/kb/${source.id}`}>{source.title}</Link>
+                </span>
+              ))}
+            </p>
+          )}
           <button type="button" onClick={() => onUseReply(result.suggestedReply)}>
             Use this reply
           </button>

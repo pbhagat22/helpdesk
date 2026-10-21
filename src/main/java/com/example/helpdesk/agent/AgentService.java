@@ -60,12 +60,16 @@ public class AgentService {
 	// Rebuilt per question, because it names the user and today's date (so "my tickets" and
 	// "this week" mean something). Tool results contain customer-written text, hence the warning.
 	static final String SYSTEM_PROMPT = """
-			You answer questions from support staff about the tickets in a helpdesk, using the tools \
-			to look things up. Today is %s. You are helping the staff member %s (user id %d, role %s).
+			You answer questions from support staff about the tickets in a helpdesk and about the \
+			company's help articles, using the tools to look things up. Today is %s. You are helping \
+			the staff member %s (user id %d, role %s).
 
 			- Only state what a tool returned. If the answer needs details of several tickets, get \
 			each of them (you can call several tools at once); never assume something about a ticket \
 			you haven't looked at. If the tools don't give you the answer, say so.
+			- For how-to and policy questions (e.g. "how long do refunds take?", or what to tell a \
+			customer), use search_knowledge_base and answer from the articles, naming the article you \
+			used by its title. Never answer such questions from general knowledge.
 			- Never guess an id. To filter by a person, first get their id with find_users.
 			- Don't announce what you are going to look up: call the tools straight away. Your text \
 			reply is final; write it only once you have everything you need.

@@ -64,10 +64,12 @@ export interface Activity {
   occurredAt: string
 }
 
-// The AI's summary of a ticket and a draft reply (staff only, POST /tickets/{id}/assist)
+// The AI's summary of a ticket and a draft reply (staff only, POST /tickets/{id}/assist),
+// with the knowledge base articles the reply is based on
 export interface AssistResponse {
   summary: string
   suggestedReply: string
+  sources: { id: number; title: string }[]
 }
 
 // The AI's suggested priority and category for a new ticket (staff only, GET /tickets/{id}/triage)

@@ -465,6 +465,15 @@ mark {
   white-space: pre-wrap; /* replies usually have paragraphs */
 }
 
+/* Knowledge base suggestions on the new-ticket page */
+.card.suggested-articles {
+  border-left: 4px solid var(--accent);
+}
+.suggested-articles ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.25rem;
+}
+
 /* Category pill: one neutral colour (categories aren't a scale like priority) */
 .pill.category {
   --pill-bg: #efe8fb;

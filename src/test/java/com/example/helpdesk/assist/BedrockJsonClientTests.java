@@ -8,6 +8,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
 import java.time.Duration;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -36,17 +37,19 @@ class BedrockJsonClientTests {
 	private final BedrockJsonClient client = new BedrockJsonClient(bedrock,
 			new AiProperties("us-east-2", "test-model", "test-agent-model", "test-embedding-model", Duration.ofSeconds(5)), JsonMapper.builder().build());
 
-	private AssistResponse askForAssist() {
+	private AssistAnswer askForAssist() {
 		return client.ask("test", "system prompt", "user prompt", "ticket_assist", TicketAssistService.SCHEMA,
-				AssistResponse.class);
+				AssistAnswer.class);
 	}
 
 	@Test
 	void sendsPromptsAndSchemaAndParsesTheAnswer() {
 		given(bedrock.converse(any(ConverseRequest.class))).willReturn(response(StopReason.END_TURN,
-				"{\"summary\": \"Printer smoking.\", \"suggestedReply\": \"Please keep it unplugged.\"}"));
+				"{\"summary\": \"Printer smoking.\", \"suggestedReply\": \"Please keep it unplugged.\", "
+						+ "\"sourceArticleIds\": [7]}"));
 
-		assertThat(askForAssist()).isEqualTo(new AssistResponse("Printer smoking.", "Please keep it unplugged."));
+		assertThat(askForAssist())
+			.isEqualTo(new AssistAnswer("Printer smoking.", "Please keep it unplugged.", List.of(7L)));
 
 		ArgumentCaptor<ConverseRequest> captor = ArgumentCaptor.forClass(ConverseRequest.class);
 		verify(bedrock).converse(captor.capture());

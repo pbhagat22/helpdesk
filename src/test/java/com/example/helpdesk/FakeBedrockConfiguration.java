@@ -43,7 +43,7 @@ public class FakeBedrockConfiguration {
 			{"priority": "HIGH", "category": "BILLING", "reason": "Fake triage for tests."}""";
 
 	public static final String ASSIST_ANSWER = """
-			{"summary": "Fake summary.", "suggestedReply": "Fake reply."}""";
+			{"summary": "Fake summary.", "suggestedReply": "Fake reply.", "sourceArticleIds": []}""";
 
 	public static final String AGENT_ANSWER = "Fake agent answer.";
 
