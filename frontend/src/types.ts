@@ -79,6 +79,15 @@ export interface Triage {
   createdAt: string
 }
 
+// The agent's answer to a staff question, and the tool calls it made (POST /agent/ask)
+export interface AgentResponse {
+  answer: string
+  steps: { tool: string; input: string; error: string | null }[]
+  modelCalls: number
+  inputTokens: number
+  outputTokens: number
+}
+
 export interface TokenResponse {
   accessToken: string
   tokenType: string

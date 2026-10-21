@@ -507,3 +507,31 @@ button.link {
   cursor: pointer;
   font: inherit;
 }
+
+/* Ask page (staff): question, answer, and the agent's tool calls */
+.ask-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.ask-answer .answer {
+  white-space: pre-wrap; /* the answer uses line breaks and "- " lists */
+  margin: 0.5rem 0 1rem;
+}
+.ask-answer details {
+  margin-bottom: 0.5rem;
+}
+.ask-answer summary {
+  cursor: pointer;
+}
+.steps {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+}
+.steps code {
+  font-size: 0.85rem;
+  word-break: break-all;
+}
+.error-text {
+  color: var(--error-text);
+}

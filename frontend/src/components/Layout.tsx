@@ -1,5 +1,6 @@
 import { Link, NavLink, Outlet } from 'react-router'
 import { useAuth } from '../auth'
+import { isStaff } from '../format'
 
 // The frame around every logged-in page: header with navigation, the user and a logout button.
 export function Layout() {
@@ -15,6 +16,7 @@ export function Layout() {
           <NavLink to="/" end>
             Tickets
           </NavLink>
+          {isStaff(user?.role) && <NavLink to="/ask">Ask AI</NavLink>}
           {user?.role === 'ADMIN' && <NavLink to="/users">Users</NavLink>}
         </nav>
         <div className="topbar-user">

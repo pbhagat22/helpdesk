@@ -34,7 +34,7 @@ class BedrockJsonClientTests {
 	private final BedrockRuntimeClient bedrock = mock(BedrockRuntimeClient.class);
 
 	private final BedrockJsonClient client = new BedrockJsonClient(bedrock,
-			new AiProperties("us-east-2", "test-model", Duration.ofSeconds(5)), JsonMapper.builder().build());
+			new AiProperties("us-east-2", "test-model", "test-agent-model", Duration.ofSeconds(5)), JsonMapper.builder().build());
 
 	private AssistResponse askForAssist() {
 		return client.ask("test", "system prompt", "user prompt", "ticket_assist", TicketAssistService.SCHEMA,

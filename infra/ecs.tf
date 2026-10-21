@@ -25,9 +25,10 @@ data "aws_ecr_image" "app" {
 }
 
 locals {
-  # The Bedrock model behind the AI assistant. One place, because the task role's IAM policy
-  # (iam.tf) only allows this model.
-  ai_model = "qwen.qwen3-32b-v1:0"
+  # The Bedrock models behind the AI features. One place, because the task role's IAM policy
+  # (iam.tf) only allows these: a small, fast one for assist and triage, a larger one for the agent.
+  ai_model       = "qwen.qwen3-32b-v1:0"
+  ai_agent_model = "qwen.qwen3-235b-a22b-2507-v1:0"
 
   # Every container logs to the same group, told apart by stream prefix
   log_configuration = {
@@ -50,6 +51,7 @@ locals {
       ELASTICSEARCH_URIS      = "http://elasticsearch.helpdesk.local:9200"
       HELPDESK_ADMIN_EMAIL    = "admin@example.com"
       HELPDESK_AI_MODEL       = local.ai_model
+      HELPDESK_AI_AGENT_MODEL = local.ai_agent_model
     }
     kafka = {
       KAFKA_NODE_ID                                  = "1"

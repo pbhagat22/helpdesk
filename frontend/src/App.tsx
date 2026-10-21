@@ -1,6 +1,8 @@
 import { createBrowserRouter, Navigate, Outlet, RouterProvider } from 'react-router'
 import { useAuth } from './auth'
 import { Layout } from './components/Layout'
+import { isStaff } from './format'
+import { AskPage } from './pages/AskPage'
 import { LoginPage } from './pages/LoginPage'
 import { NewTicketPage } from './pages/NewTicketPage'
 import { RegisterPage } from './pages/RegisterPage'
@@ -24,6 +26,12 @@ function RequireAdmin() {
   return user?.role === 'ADMIN' ? <Outlet /> : <Navigate to="/" replace />
 }
 
+// Staff-only pages (agents and admins); customers are sent back to the ticket list.
+function RequireStaff() {
+  const { user } = useAuth()
+  return isStaff(user?.role) ? <Outlet /> : <Navigate to="/" replace />
+}
+
 // Client-side routing: the browser URL picks the page without a server round trip.
 const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
@@ -37,6 +45,7 @@ const router = createBrowserRouter([
           { path: '/', element: <TicketListPage /> },
           { path: '/tickets/new', element: <NewTicketPage /> },
           { path: '/tickets/:id', element: <TicketDetailPage /> },
+          { element: <RequireStaff />, children: [{ path: '/ask', element: <AskPage /> }] },
           { element: <RequireAdmin />, children: [{ path: '/users', element: <UsersPage /> }] },
         ],
       },

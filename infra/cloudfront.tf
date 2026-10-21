@@ -30,6 +30,9 @@ resource "aws_cloudfront_distribution" "app" {
       https_port             = 443
       origin_protocol_policy = "http-only"
       origin_ssl_protocols   = ["TLSv1.2"]
+      # How long CloudFront waits for the app's response (default 30s, 60s is the most without a
+      # quota increase). The AI agent can take 10-30s for a question; the ALB's idle timeout is 60s.
+      origin_read_timeout = 60
     }
   }
 

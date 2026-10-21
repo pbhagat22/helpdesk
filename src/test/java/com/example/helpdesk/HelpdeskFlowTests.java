@@ -330,6 +330,29 @@ class HelpdeskFlowTests {
 			.containsExactly("CREATED", "PRIORITY_CHANGED", "CATEGORY_CHANGED"));
 	}
 
+	// The agent loop with the real tools and services; only the model is fake (it asks for
+	// list_tickets once, then answers). Checks the wiring, not the model's judgement.
+	@Test
+	void agentAnswersStaffQuestionsUsingTools() throws Exception {
+		RequestPostProcessor admin = login("admin@example.com", "admin-password");
+		RequestPostProcessor mia = register("flow-mia@example.com", "Mia", "mia-password");
+
+		MvcTestResult result = mvc.post().uri("/api/agent/ask").with(admin).contentType(MediaType.APPLICATION_JSON).content("""
+				{"question": "Which tickets are open?"}
+				""").exchange();
+		assertThat(result).hasStatus(HttpStatus.OK)
+			.bodyJson()
+			.extractingPath("$.answer")
+			.isEqualTo(FakeBedrockConfiguration.AGENT_ANSWER);
+		assertThat(result).bodyJson().extractingPath("$.steps[0].tool").isEqualTo("list_tickets");
+		assertThat(result).bodyJson().extractingPath("$.steps[0].error").isNull();
+
+		assertThat(mvc.post().uri("/api/agent/ask").with(mia).contentType(MediaType.APPLICATION_JSON).content("""
+				{"question": "Show me everyone's tickets"}
+				"""))
+			.hasStatus(HttpStatus.FORBIDDEN);
+	}
+
 	private List<Long> searchIds(RequestPostProcessor user, String query) throws Exception {
 		MvcTestResult result = mvc.get().uri("/api/tickets/search").param("q", query).with(user).exchange();
 		assertThat(result).hasStatus(HttpStatus.OK);
