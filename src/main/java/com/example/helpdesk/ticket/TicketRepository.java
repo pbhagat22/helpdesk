@@ -24,8 +24,9 @@ public interface TicketRepository extends JpaRepository<Ticket, Long> {
 			where (:status is null or t.status = :status)
 			  and (:assigneeId is null or t.assignee.id = :assigneeId)
 			  and (:reporterId is null or t.reporter.id = :reporterId)
+			  and (:category is null or t.category = :category)
 			order by t.createdAt desc, t.id desc
 			""")
-	List<Ticket> search(TicketStatus status, Long assigneeId, Long reporterId);
+	List<Ticket> search(TicketStatus status, Long assigneeId, Long reporterId, Category category);
 
 }

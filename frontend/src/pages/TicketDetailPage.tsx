@@ -2,18 +2,21 @@ import { useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router'
 import { api, ApiError } from '../api'
 import { useAuth } from '../auth'
-import { PriorityBadge, StatusBadge } from '../components/Badges'
+import { CategoryBadge, PriorityBadge, StatusBadge } from '../components/Badges'
 import { ErrorMessage } from '../components/ErrorMessage'
 import { formatDate, isStaff, label } from '../format'
 import {
+  CATEGORIES,
   PRIORITIES,
   TICKET_STATUSES,
   type Activity,
   type AssistResponse,
+  type Category,
   type Comment,
   type Priority,
   type Ticket,
   type TicketStatus,
+  type Triage,
   type User,
 } from '../types'
 import { useApi } from '../useApi'
@@ -57,6 +60,7 @@ export function TicketDetailPage() {
         <div className="pills">
           <StatusBadge status={ticket.status} />
           <PriorityBadge priority={ticket.priority} />
+          <CategoryBadge category={ticket.category} />
         </div>
       </div>
       <p className="hint">
@@ -64,6 +68,16 @@ export function TicketDetailPage() {
         {ticket.assignee?.name ?? 'nobody yet'}
       </p>
       <div className="card description">{ticket.description}</div>
+
+      {isStaff(user?.role) && (
+        <TriageSuggestion
+          ticket={ticket}
+          onApplied={() => {
+            reloadTicket()
+            refreshHistory()
+          }}
+        />
+      )}
 
       {/* key: when the ticket changes (after a save), start the form fresh from the new values */}
       {isStaff(user?.role) && (
@@ -127,6 +141,10 @@ function describe(entry: Activity): string {
       return `${who} changed the status from ${label(details.from)} to ${label(details.to)}`
     case 'PRIORITY_CHANGED':
       return `${who} changed the priority from ${label(details.from)} to ${label(details.to)}`
+    case 'CATEGORY_CHANGED':
+      return details.from === 'NONE'
+        ? `${who} set the category to ${label(details.to)}`
+        : `${who} changed the category from ${label(details.from)} to ${label(details.to)}`
     case 'ASSIGNED':
       return details.assigneeId === String(entry.actor?.id)
         ? `${who} assigned it to themselves`
@@ -141,6 +159,7 @@ function StaffControls({ ticket, onSaved }: { ticket: Ticket; onSaved: () => voi
   const { data: users } = useApi<User[]>('/users')
   const [status, setStatus] = useState<TicketStatus>(ticket.status)
   const [priority, setPriority] = useState<Priority>(ticket.priority)
+  const [category, setCategory] = useState<Category | ''>(ticket.category ?? '')
   const [assigneeId, setAssigneeId] = useState(ticket.assignee ? String(ticket.assignee.id) : '')
   const [error, setError] = useState<unknown>(null)
   const [busy, setBusy] = useState(false)
@@ -149,6 +168,7 @@ function StaffControls({ ticket, onSaved }: { ticket: Ticket; onSaved: () => voi
   const changed =
     status !== ticket.status ||
     priority !== ticket.priority ||
+    category !== (ticket.category ?? '') ||
     assigneeId !== (ticket.assignee ? String(ticket.assignee.id) : '')
 
   async function handleSave(event: FormEvent) {
@@ -162,6 +182,7 @@ function StaffControls({ ticket, onSaved }: { ticket: Ticket; onSaved: () => voi
         body: {
           status: status !== ticket.status ? status : undefined,
           priority: priority !== ticket.priority ? priority : undefined,
+          category: category && category !== ticket.category ? category : undefined,
           assigneeId: assigneeId && assigneeId !== String(ticket.assignee?.id) ? Number(assigneeId) : undefined,
         },
       })
@@ -195,6 +216,18 @@ function StaffControls({ ticket, onSaved }: { ticket: Ticket; onSaved: () => voi
         </select>
       </label>
       <label>
+        Category
+        <select value={category} onChange={(e) => setCategory(e.target.value as Category)}>
+          {/* Like the assignee: there's no "uncategorise", so the empty choice is only there while unset */}
+          {!ticket.category && <option value="">Uncategorised</option>}
+          {CATEGORIES.map((c) => (
+            <option key={c} value={c}>
+              {label(c)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
         Assignee
         <select value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)}>
           {/* The API has no "unassign", so "Unassigned" is only offered while nobody is assigned */}
@@ -214,7 +247,73 @@ function StaffControls({ ticket, onSaved }: { ticket: Ticket; onSaved: () => voi
   )
 }
 
-// Staff only: asks Claude (through the backend) for a summary and a draft reply.
+// Staff only: the AI's triage suggestion, made in the background when the ticket was created.
+// It never changes the ticket by itself; "Apply" sends the same PATCH as the staff controls.
+function TriageSuggestion({ ticket, onApplied }: { ticket: Ticket; onApplied: () => void }) {
+  const { data: triage, error, reload } = useApi<Triage>(`/tickets/${ticket.id}/triage`)
+  const [applyError, setApplyError] = useState<unknown>(null)
+  const [busy, setBusy] = useState(false)
+
+  // 404 = no suggestion (yet): triage takes a few seconds after creation, or it failed.
+  if (error instanceof ApiError && error.status === 404) {
+    return (
+      <p className="hint triage">
+        No AI triage suggestion yet.{' '}
+        <button type="button" className="link" onClick={reload}>
+          Check again
+        </button>
+      </p>
+    )
+  }
+  if (error) {
+    return <ErrorMessage error={error} />
+  }
+  if (!triage) {
+    return null
+  }
+
+  const applied = triage.priority === ticket.priority && triage.category === ticket.category
+
+  async function handleApply() {
+    if (!triage) return
+    setBusy(true)
+    setApplyError(null)
+    try {
+      await api<Ticket>(`/tickets/${ticket.id}`, {
+        method: 'PATCH',
+        body: { priority: triage.priority, category: triage.category },
+      })
+      onApplied()
+    } catch (e) {
+      setApplyError(e)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="card triage">
+      <div className="triage-head">
+        <strong>AI triage</strong>
+        <div className="pills">
+          <PriorityBadge priority={triage.priority} />
+          <CategoryBadge category={triage.category} />
+        </div>
+        {applied ? (
+          <span className="hint">Applied</span>
+        ) : (
+          <button type="button" onClick={handleApply} disabled={busy}>
+            {busy ? 'Applying…' : 'Apply'}
+          </button>
+        )}
+      </div>
+      <p>{triage.reason}</p>
+      <ErrorMessage error={applyError} />
+    </div>
+  )
+}
+
+// Staff only: asks the AI (through the backend) for a summary and a draft reply.
 // The draft is only copied into the comment box; an agent reads and edits it before sending.
 function AiAssistant({ ticketId, onUseReply }: { ticketId: number; onUseReply: (reply: string) => void }) {
   const [result, setResult] = useState<AssistResponse | null>(null)

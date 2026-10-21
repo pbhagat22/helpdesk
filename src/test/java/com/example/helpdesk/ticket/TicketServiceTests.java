@@ -74,17 +74,17 @@ class TicketServiceTests {
 
 	@Test
 	void customersOnlyListTheirOwnTickets() {
-		given(tickets.search(TicketStatus.OPEN, null, 1L)).willReturn(List.of(ticket));
+		given(tickets.search(TicketStatus.OPEN, null, 1L, null)).willReturn(List.of(ticket));
 
-		assertThat(ticketService.list(TicketStatus.OPEN, null, ALICE)).hasSize(1);
-		then(tickets).should().search(TicketStatus.OPEN, null, 1L);
+		assertThat(ticketService.list(TicketStatus.OPEN, null, null, ALICE)).hasSize(1);
+		then(tickets).should().search(TicketStatus.OPEN, null, 1L, null);
 	}
 
 	@Test
 	void agentsListAllTickets() {
-		given(tickets.search(null, null, null)).willReturn(List.of(ticket));
+		given(tickets.search(null, null, null, Category.BILLING)).willReturn(List.of(ticket));
 
-		assertThat(ticketService.list(null, null, BOB)).hasSize(1);
+		assertThat(ticketService.list(null, null, Category.BILLING, BOB)).hasSize(1);
 	}
 
 	@Test
@@ -114,7 +114,7 @@ class TicketServiceTests {
 	void updateChangesOnlyTheFieldsThatAreSet() {
 		given(tickets.findById(1L)).willReturn(Optional.of(ticket));
 
-		TicketResponse response = ticketService.update(1L, new UpdateTicketRequest(TicketStatus.RESOLVED, null, null),
+		TicketResponse response = ticketService.update(1L, new UpdateTicketRequest(TicketStatus.RESOLVED, null, null, null),
 				BOB);
 
 		assertThat(response.status()).isEqualTo(TicketStatus.RESOLVED);
@@ -127,7 +127,7 @@ class TicketServiceTests {
 		given(tickets.findById(1L)).willReturn(Optional.of(ticket));
 
 		// Status changes (OPEN → RESOLVED); priority is set to the value it already has (HIGH).
-		ticketService.update(1L, new UpdateTicketRequest(TicketStatus.RESOLVED, Priority.HIGH, null), BOB);
+		ticketService.update(1L, new UpdateTicketRequest(TicketStatus.RESOLVED, Priority.HIGH, null, null), BOB);
 
 		then(events).should().publishEvent(eventCaptor.capture());
 		then(events).shouldHaveNoMoreInteractions();
@@ -138,13 +138,26 @@ class TicketServiceTests {
 	}
 
 	@Test
+	void firstCategoryIsAChangeFromNone() {
+		given(tickets.findById(1L)).willReturn(Optional.of(ticket));
+
+		TicketResponse response = ticketService.update(1L, new UpdateTicketRequest(null, null, null, Category.ACCOUNT),
+				BOB);
+
+		assertThat(response.category()).isEqualTo(Category.ACCOUNT);
+		then(events).should().publishEvent(eventCaptor.capture());
+		assertThat(eventCaptor.getValue().type()).isEqualTo(TicketEventType.CATEGORY_CHANGED);
+		assertThat(eventCaptor.getValue().details()).containsEntry("from", "NONE").containsEntry("to", "ACCOUNT");
+	}
+
+	@Test
 	void updateAssignsTicketToAgent() {
 		User agent = new User("bob@example.com", "Bob", Role.AGENT, "{noop}unused");
 		ReflectionTestUtils.setField(agent, "id", 2L);
 		given(tickets.findById(1L)).willReturn(Optional.of(ticket));
 		given(users.findById(2L)).willReturn(Optional.of(agent));
 
-		TicketResponse response = ticketService.update(1L, new UpdateTicketRequest(null, null, 2L), BOB);
+		TicketResponse response = ticketService.update(1L, new UpdateTicketRequest(null, null, 2L, null), BOB);
 
 		assertThat(response.assignee().email()).isEqualTo("bob@example.com");
 		then(events).should().publishEvent(eventCaptor.capture());
@@ -157,7 +170,7 @@ class TicketServiceTests {
 		given(tickets.findById(1L)).willReturn(Optional.of(ticket));
 		given(users.findById(1L)).willReturn(Optional.of(customer));
 
-		assertThatThrownBy(() -> ticketService.update(1L, new UpdateTicketRequest(null, null, 1L), BOB))
+		assertThatThrownBy(() -> ticketService.update(1L, new UpdateTicketRequest(null, null, 1L, null), BOB))
 			.isInstanceOf(BadRequestException.class);
 		assertThat(ticket.getAssignee()).isNull();
 		then(events).shouldHaveNoInteractions();

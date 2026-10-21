@@ -38,11 +38,12 @@ public class TicketController {
 		return ticketService.create(request, me.getId());
 	}
 
-	// GET /api/tickets?status=OPEN&assigneeId=2 (both filters optional)
+	// GET /api/tickets?status=OPEN&assigneeId=2&category=BILLING (all filters optional)
 	@GetMapping
 	public List<TicketResponse> list(@RequestParam(required = false) TicketStatus status,
-			@RequestParam(required = false) Long assigneeId, @AuthenticationPrincipal HelpdeskUserDetails me) {
-		return ticketService.list(status, assigneeId, me);
+			@RequestParam(required = false) Long assigneeId, @RequestParam(required = false) Category category,
+			@AuthenticationPrincipal HelpdeskUserDetails me) {
+		return ticketService.list(status, assigneeId, category, me);
 	}
 
 	@GetMapping("/{id}")
@@ -50,7 +51,7 @@ public class TicketController {
 		return ticketService.get(id, me);
 	}
 
-	// Changing status, priority or assignee is staff work. @PreAuthorize is checked
+	// Changing status, priority, category or assignee is staff work. @PreAuthorize is checked
 	// before the method runs; a customer gets 403.
 	@PatchMapping("/{id}")
 	@PreAuthorize("hasAnyRole('AGENT', 'ADMIN')")

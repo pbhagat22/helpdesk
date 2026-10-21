@@ -2,6 +2,7 @@ package com.example.helpdesk.ticket;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -52,14 +53,21 @@ public class TicketService {
 		return TicketResponse.from(ticket);
 	}
 
-	public List<TicketResponse> list(TicketStatus status, Long assigneeId, HelpdeskUserDetails me) {
+	public List<TicketResponse> list(TicketStatus status, Long assigneeId, Category category,
+			HelpdeskUserDetails me) {
 		// Customers always get only their own tickets, whatever filters they pass.
 		Long reporterId = isCustomer(me) ? me.getId() : null;
-		return tickets.search(status, assigneeId, reporterId).stream().map(TicketResponse::from).toList();
+		return tickets.search(status, assigneeId, reporterId, category).stream().map(TicketResponse::from).toList();
 	}
 
 	public TicketResponse get(Long id, HelpdeskUserDetails me) {
 		return TicketResponse.from(findVisibleTicket(id, me));
+	}
+
+	// For background jobs (e.g. AI triage), which act for no logged-in user, so there's no
+	// ownership check. Empty if the ticket doesn't exist (any more).
+	public Optional<TicketResponse> find(Long id) {
+		return tickets.findById(id).map(TicketResponse::from);
 	}
 
 	// Only agents and admins get here (see TicketController), so no ownership check.
@@ -78,6 +86,13 @@ public class TicketService {
 			events.publishEvent(TicketEvent.of(TicketEventType.PRIORITY_CHANGED, id, me.getId(),
 					Map.of("from", ticket.getPriority().name(), "to", request.priority().name())));
 			ticket.setPriority(request.priority());
+		}
+		if (request.category() != null && request.category() != ticket.getCategory()) {
+			// "NONE": the first time, there's no category to change from (Map.of rejects nulls)
+			String from = ticket.getCategory() != null ? ticket.getCategory().name() : "NONE";
+			events.publishEvent(TicketEvent.of(TicketEventType.CATEGORY_CHANGED, id, me.getId(),
+					Map.of("from", from, "to", request.category().name())));
+			ticket.setCategory(request.category());
 		}
 		if (request.assigneeId() != null) {
 			User assignee = findUser(request.assigneeId());

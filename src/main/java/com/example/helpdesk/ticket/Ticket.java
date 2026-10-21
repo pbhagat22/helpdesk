@@ -39,6 +39,11 @@ public class Ticket {
 	@Column(nullable = false, length = 20)
 	private Priority priority;
 
+	// Null until staff (or staff applying the AI's suggestion) categorise the ticket.
+	@Enumerated(EnumType.STRING)
+	@Column(length = 20)
+	private Category category;
+
 	// LAZY: the user row is only loaded if the code actually reads it.
 	@ManyToOne(fetch = FetchType.LAZY, optional = false)
 	@JoinColumn(name = "reporter_id", nullable = false)
@@ -101,6 +106,14 @@ public class Ticket {
 
 	public void setPriority(Priority priority) {
 		this.priority = priority;
+	}
+
+	public Category getCategory() {
+		return category;
+	}
+
+	public void setCategory(Category category) {
+		this.category = category;
 	}
 
 	public User getReporter() {

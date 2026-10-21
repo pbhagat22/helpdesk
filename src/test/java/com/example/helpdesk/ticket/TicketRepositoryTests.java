@@ -43,7 +43,7 @@ class TicketRepositoryTests {
 		Ticket older = entityManager.persist(new Ticket("Older", "First one", Priority.LOW, customer));
 		Ticket newer = entityManager.persist(new Ticket("Newer", "Second one", Priority.LOW, customer));
 
-		assertThat(tickets.search(null, null, null)).containsExactly(newer, older);
+		assertThat(tickets.search(null, null, null, null)).containsExactly(newer, older);
 	}
 
 	@Test
@@ -53,7 +53,7 @@ class TicketRepositoryTests {
 		resolved.setStatus(TicketStatus.RESOLVED);
 		entityManager.persist(resolved);
 
-		assertThat(tickets.search(TicketStatus.OPEN, null, null)).containsExactly(open);
+		assertThat(tickets.search(TicketStatus.OPEN, null, null, null)).containsExactly(open);
 	}
 
 	@Test
@@ -63,7 +63,7 @@ class TicketRepositoryTests {
 		entityManager.persist(assigned);
 		entityManager.persist(new Ticket("Unassigned", "Nobody has this yet", Priority.LOW, customer));
 
-		assertThat(tickets.search(null, agent.getId(), null)).containsExactly(assigned);
+		assertThat(tickets.search(null, agent.getId(), null, null)).containsExactly(assigned);
 	}
 
 	@Test
@@ -75,7 +75,18 @@ class TicketRepositoryTests {
 		mineResolved.setStatus(TicketStatus.RESOLVED);
 		entityManager.persist(mineResolved);
 
-		assertThat(tickets.search(TicketStatus.OPEN, null, customer.getId())).containsExactly(mine);
+		assertThat(tickets.search(TicketStatus.OPEN, null, customer.getId(), null)).containsExactly(mine);
+	}
+
+	@Test
+	void searchFiltersByCategory() {
+		Ticket billing = new Ticket("Invoice missing", "No invoice for May", Priority.LOW, customer);
+		billing.setCategory(Category.BILLING);
+		entityManager.persist(billing);
+		// Uncategorised tickets (null) don't match a category filter
+		entityManager.persist(new Ticket("Uncategorised", "Nobody looked yet", Priority.LOW, customer));
+
+		assertThat(tickets.search(null, null, null, Category.BILLING)).containsExactly(billing);
 	}
 
 	@Test

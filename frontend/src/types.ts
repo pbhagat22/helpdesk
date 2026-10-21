@@ -17,12 +17,16 @@ export type Priority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'
 export const TICKET_STATUSES: TicketStatus[] = ['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED']
 export const PRIORITIES: Priority[] = ['LOW', 'MEDIUM', 'HIGH', 'URGENT']
 
+export type Category = 'ACCOUNT' | 'BILLING' | 'BUG' | 'HOW_TO' | 'OTHER'
+export const CATEGORIES: Category[] = ['ACCOUNT', 'BILLING', 'BUG', 'HOW_TO', 'OTHER']
+
 export interface Ticket {
   id: number
   title: string
   description: string
   status: TicketStatus
   priority: Priority
+  category: Category | null // null until staff categorise it
   reporter: User
   assignee: User | null
   createdAt: string
@@ -43,7 +47,13 @@ export interface SearchResult {
   highlights: string[]
 }
 
-export type ActivityType = 'CREATED' | 'STATUS_CHANGED' | 'PRIORITY_CHANGED' | 'ASSIGNED' | 'COMMENTED'
+export type ActivityType =
+  | 'CREATED'
+  | 'STATUS_CHANGED'
+  | 'PRIORITY_CHANGED'
+  | 'CATEGORY_CHANGED'
+  | 'ASSIGNED'
+  | 'COMMENTED'
 
 // One entry in a ticket's history (built by the backend from Kafka events)
 export interface Activity {
@@ -54,10 +64,19 @@ export interface Activity {
   occurredAt: string
 }
 
-// Claude's summary of a ticket and a draft reply (staff only, POST /tickets/{id}/assist)
+// The AI's summary of a ticket and a draft reply (staff only, POST /tickets/{id}/assist)
 export interface AssistResponse {
   summary: string
   suggestedReply: string
+}
+
+// The AI's suggested priority and category for a new ticket (staff only, GET /tickets/{id}/triage)
+export interface Triage {
+  priority: Priority
+  category: Category
+  reason: string
+  model: string
+  createdAt: string
 }
 
 export interface TokenResponse {

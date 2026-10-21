@@ -46,7 +46,7 @@ class TicketControllerTests {
 			Instant.now());
 
 	private TicketResponse ticket(TicketStatus status) {
-		return new TicketResponse(1L, "Can't log in", "Password reset fails", status, Priority.HIGH, aliceResponse,
+		return new TicketResponse(1L, "Can't log in", "Password reset fails", status, Priority.HIGH, null, aliceResponse,
 				null, Instant.now(), Instant.now());
 	}
 
@@ -89,9 +89,10 @@ class TicketControllerTests {
 
 	@Test
 	void listPassesFiltersToService() {
-		given(ticketService.list(eq(TicketStatus.OPEN), eq(2L), any())).willReturn(List.of(ticket(TicketStatus.OPEN)));
+		given(ticketService.list(eq(TicketStatus.OPEN), eq(2L), eq(Category.BILLING), any()))
+			.willReturn(List.of(ticket(TicketStatus.OPEN)));
 
-		assertThat(mvc.get().uri("/api/tickets?status=OPEN&assigneeId=2").with(user(alice)))
+		assertThat(mvc.get().uri("/api/tickets?status=OPEN&assigneeId=2&category=BILLING").with(user(alice)))
 			.hasStatus(HttpStatus.OK)
 			.bodyJson()
 			.extractingPath("$.length()")

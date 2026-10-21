@@ -10,7 +10,7 @@ import org.springframework.context.annotation.Import;
 // instead of starting Postgres, Kafka and Elasticsearch twice.
 @SpringBootTest(properties = { "helpdesk.admin.email=admin@example.com", "helpdesk.admin.password=admin-password" })
 @Import({ TestcontainersConfiguration.class, KafkaTestcontainersConfiguration.class,
-		ElasticsearchTestcontainersConfiguration.class })
+		ElasticsearchTestcontainersConfiguration.class, FakeBedrockConfiguration.class })
 @AutoConfigureMockMvc
 class HelpdeskApplicationTests {
 

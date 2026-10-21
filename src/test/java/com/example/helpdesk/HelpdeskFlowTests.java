@@ -41,7 +41,7 @@ import com.jayway.jsonpath.JsonPath;
 // The properties configure the bootstrap admin, as HELPDESK_ADMIN_* would in production.
 @SpringBootTest(properties = { "helpdesk.admin.email=admin@example.com", "helpdesk.admin.password=admin-password" })
 @Import({ TestcontainersConfiguration.class, KafkaTestcontainersConfiguration.class,
-		ElasticsearchTestcontainersConfiguration.class })
+		ElasticsearchTestcontainersConfiguration.class, FakeBedrockConfiguration.class })
 @AutoConfigureMockMvc
 class HelpdeskFlowTests {
 
@@ -286,6 +286,48 @@ class HelpdeskFlowTests {
 			.extractingPath("$.indexed")
 			.asNumber()
 			.satisfies(count -> assertThat(count.intValue()).isPositive());
+	}
+
+	// New tickets are triaged in the background (Kafka → triage listener → model). The model is
+	// a fake here (FakeBedrockConfiguration), so this checks the plumbing, not the model's judgement.
+	@Test
+	void newTicketsGetATriageSuggestionThatStaffCanApply() throws Exception {
+		RequestPostProcessor admin = login("admin@example.com", "admin-password");
+		RequestPostProcessor lou = register("flow-lou@example.com", "Lou", "lou-password");
+		long ticketId = createAndGetId("/api/tickets", lou, """
+				{"title": "No invoice for May", "description": "Needed by Friday", "priority": "LOW"}
+				""");
+
+		await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> assertThat(
+				mvc.get().uri("/api/tickets/{id}/triage", ticketId).with(admin))
+			.hasStatus(HttpStatus.OK)
+			.bodyJson()
+			.extractingPath("$.category")
+			.isEqualTo("BILLING"));
+		// The suggestion doesn't change the ticket by itself, and customers can't see it.
+		assertThat(mvc.get().uri("/api/tickets/{id}", ticketId).with(lou)).bodyJson()
+			.extractingPath("$.category")
+			.isNull();
+		assertThat(mvc.get().uri("/api/tickets/{id}/triage", ticketId).with(lou)).hasStatus(HttpStatus.FORBIDDEN);
+
+		// Staff apply it with a normal update, which shows up in the history like any change.
+		assertThat(mvc.patch().uri("/api/tickets/{id}", ticketId).with(admin).contentType(MediaType.APPLICATION_JSON).content("""
+				{"priority": "HIGH", "category": "BILLING"}
+				"""))
+			.hasStatus(HttpStatus.OK)
+			.bodyJson()
+			.extractingPath("$.category")
+			.isEqualTo("BILLING");
+		assertThat(mvc.get().uri("/api/tickets?category=BILLING").with(admin)).bodyJson()
+			.extractingPath("$[*].id")
+			.asArray()
+			.contains((int) ticketId);
+		await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> assertThat(
+				mvc.get().uri("/api/tickets/{id}/activity", ticketId).with(lou))
+			.bodyJson()
+			.extractingPath("$[*].type")
+			.asArray()
+			.containsExactly("CREATED", "PRIORITY_CHANGED", "CATEGORY_CHANGED"));
 	}
 
 	private List<Long> searchIds(RequestPostProcessor user, String query) throws Exception {

@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { useAuth } from '../auth'
-import { PriorityBadge, StatusBadge } from '../components/Badges'
+import { CategoryBadge, PriorityBadge, StatusBadge } from '../components/Badges'
 import { ErrorMessage } from '../components/ErrorMessage'
 import { Highlighted, stripMarks } from '../components/Highlighted'
 import { formatDate, isStaff, label } from '../format'
-import { TICKET_STATUSES, type SearchResult, type Ticket, type User } from '../types'
+import { CATEGORIES, TICKET_STATUSES, type SearchResult, type Ticket, type User } from '../types'
 import { useApi } from '../useApi'
 
 // Customers see "My tickets" (the backend only returns their own). Staff see the whole
@@ -18,6 +18,7 @@ export function TicketListPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const status = searchParams.get('status') ?? ''
   const assignee = searchParams.get('assignee') ?? ''
+  const category = searchParams.get('category') ?? ''
   const query = searchParams.get('q') ?? ''
 
   // replace: update the URL without adding a history entry (used while typing, so Back
@@ -60,10 +61,24 @@ export function TicketListPage() {
               </select>
             </label>
             {staff && <AssigneeFilter value={assignee} onChange={(value) => setParam('assignee', value)} />}
+            {staff && (
+              <label>
+                Category
+                <select value={category} onChange={(e) => setParam('category', e.target.value)}>
+                  <option value="">All</option>
+                  {CATEGORIES.map((c) => (
+                    <option key={c} value={c}>
+                      {label(c)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
           </div>
           <TicketTable
             status={status}
             assigneeId={assignee === 'me' ? String(user?.id) : assignee}
+            category={category}
             staff={staff}
           />
         </>
@@ -149,10 +164,21 @@ function SearchResults({ query, staff }: { query: string; staff: boolean }) {
   )
 }
 
-function TicketTable({ status, assigneeId, staff }: { status: string; assigneeId: string; staff: boolean }) {
+function TicketTable({
+  status,
+  assigneeId,
+  category,
+  staff,
+}: {
+  status: string
+  assigneeId: string
+  category: string
+  staff: boolean
+}) {
   const params = new URLSearchParams()
   if (status) params.set('status', status)
   if (assigneeId) params.set('assigneeId', assigneeId)
+  if (category) params.set('category', category)
   const { data: tickets, error } = useApi<Ticket[]>(`/tickets${params.size ? `?${params}` : ''}`)
 
   return (
@@ -168,6 +194,7 @@ function TicketTable({ status, assigneeId, staff }: { status: string; assigneeId
               <th>Title</th>
               <th>Status</th>
               <th>Priority</th>
+              {staff && <th>Category</th>}
               {staff && <th>Reporter</th>}
               <th>Assignee</th>
               <th>Updated</th>
@@ -186,6 +213,11 @@ function TicketTable({ status, assigneeId, staff }: { status: string; assigneeId
                 <td>
                   <PriorityBadge priority={ticket.priority} />
                 </td>
+                {staff && (
+                  <td>
+                    <CategoryBadge category={ticket.category} />
+                  </td>
+                )}
                 {staff && <td>{ticket.reporter.name}</td>}
                 <td>{ticket.assignee?.name ?? <span className="hint">Unassigned</span>}</td>
                 <td className="hint">{formatDate(ticket.updatedAt)}</td>
