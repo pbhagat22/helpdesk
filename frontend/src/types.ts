@@ -88,6 +88,25 @@ export interface AgentResponse {
   outputTokens: number
 }
 
+// A knowledge base article. chunkCount 0 = not searchable (embedding failed)
+export interface Article {
+  id: number
+  title: string
+  body: string
+  author: User
+  createdAt: string
+  updatedAt: string
+  chunkCount: number
+}
+
+// A semantic search hit: the article's best-matching passage and how close in meaning it is (0-1)
+export interface ArticleSearchResult {
+  id: number
+  title: string
+  snippet: string
+  similarity: number
+}
+
 export interface TokenResponse {
   accessToken: string
   tokenType: string

@@ -40,7 +40,7 @@ class TicketTriageServiceTests {
 	private final TicketTriageRepository triages = mock(TicketTriageRepository.class);
 
 	private final TicketTriageService service = new TicketTriageService(llm,
-			new AiProperties("us-east-2", "test-model", "test-agent-model", Duration.ofSeconds(5)), ticketService, triages);
+			new AiProperties("us-east-2", "test-model", "test-agent-model", "test-embedding-model", Duration.ofSeconds(5)), ticketService, triages);
 
 	private final TicketResponse ticket = new TicketResponse(1L, "Invoice page blank",
 			"I need <b>last month's</b> invoice by Friday", TicketStatus.OPEN, Priority.URGENT, null,

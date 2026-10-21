@@ -16,6 +16,7 @@ export function Layout() {
           <NavLink to="/" end>
             Tickets
           </NavLink>
+          <NavLink to="/kb">Knowledge base</NavLink>
           {isStaff(user?.role) && <NavLink to="/ask">Ask AI</NavLink>}
           {user?.role === 'ADMIN' && <NavLink to="/users">Users</NavLink>}
         </nav>

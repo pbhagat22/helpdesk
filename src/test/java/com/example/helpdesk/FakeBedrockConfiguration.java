@@ -4,12 +4,18 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 
+import java.util.Arrays;
+import java.util.Locale;
 import java.util.Map;
 
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 
+import com.example.helpdesk.assist.EmbeddingClient;
+import com.jayway.jsonpath.JsonPath;
+
+import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.core.document.Document;
 import software.amazon.awssdk.services.bedrockruntime.BedrockRuntimeClient;
 import software.amazon.awssdk.services.bedrockruntime.model.ContentBlock;
@@ -17,6 +23,8 @@ import software.amazon.awssdk.services.bedrockruntime.model.ConversationRole;
 import software.amazon.awssdk.services.bedrockruntime.model.ConverseOutput;
 import software.amazon.awssdk.services.bedrockruntime.model.ConverseRequest;
 import software.amazon.awssdk.services.bedrockruntime.model.ConverseResponse;
+import software.amazon.awssdk.services.bedrockruntime.model.InvokeModelRequest;
+import software.amazon.awssdk.services.bedrockruntime.model.InvokeModelResponse;
 import software.amazon.awssdk.services.bedrockruntime.model.Message;
 import software.amazon.awssdk.services.bedrockruntime.model.StopReason;
 import software.amazon.awssdk.services.bedrockruntime.model.ToolUseBlock;
@@ -26,6 +34,8 @@ import software.amazon.awssdk.services.bedrockruntime.model.ToolUseBlock;
 // AWS credentials, and on a developer machine it would cost money. The canned answers
 // depend on which schema the request asks for; agent requests (with tools) first get a
 // list_tickets call, then a text answer once the tool result is in the conversation.
+// Embeddings (InvokeModel) are a crude "bag of words": each word adds 1 to a dimension picked
+// by its hash. Texts sharing words point the same way, enough to test the search plumbing.
 @TestConfiguration(proxyBeanMethods = false)
 public class FakeBedrockConfiguration {
 
@@ -56,7 +66,32 @@ public class FakeBedrockConfiguration {
 						Message.builder().role(ConversationRole.ASSISTANT).content(ContentBlock.fromText(answer)).build()))
 				.build();
 		});
+		given(client.invokeModel(any(InvokeModelRequest.class))).willAnswer(invocation -> {
+			InvokeModelRequest request = invocation.getArgument(0);
+			String text = JsonPath.read(request.body().asUtf8String(), "$.inputText");
+			return InvokeModelResponse.builder()
+				.body(SdkBytes.fromUtf8String("{\"embedding\": " + Arrays.toString(fakeEmbedding(text))
+						+ ", \"inputTextTokenCount\": 1}"))
+				.build();
+		});
 		return client;
+	}
+
+	static float[] fakeEmbedding(String text) {
+		float[] vector = new float[EmbeddingClient.DIMENSIONS];
+		for (String word : text.toLowerCase(Locale.ROOT).split("\\W+")) {
+			if (!word.isEmpty()) {
+				vector[Math.floorMod(word.hashCode(), vector.length)] += 1;
+			}
+		}
+		double length = 0;
+		for (float value : vector) {
+			length += value * value;
+		}
+		for (int i = 0; i < vector.length; i++) {
+			vector[i] = length == 0 ? 0 : (float) (vector[i] / Math.sqrt(length));
+		}
+		return vector;
 	}
 
 	private static ConverseResponse agentTurn(ConverseRequest request) {

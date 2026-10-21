@@ -52,7 +52,7 @@ resource "aws_iam_role" "app_task" {
 }
 
 # The AI features call Bedrock's Converse API, which needs bedrock:InvokeModel, and only for the
-# models the app is configured with (local.ai_model and local.ai_agent_model in ecs.tf).
+# models the app is configured with (local.ai_* in ecs.tf). Embedding calls use InvokeModel directly.
 resource "aws_iam_role_policy" "app_invoke_model" {
   name = "invoke-ai-model"
   role = aws_iam_role.app_task.id
@@ -61,7 +61,7 @@ resource "aws_iam_role_policy" "app_invoke_model" {
     Statement = [{
       Effect   = "Allow"
       Action   = "bedrock:InvokeModel"
-      Resource = [for model in [local.ai_model, local.ai_agent_model] : "arn:aws:bedrock:${local.region}::foundation-model/${model}"]
+      Resource = [for model in [local.ai_model, local.ai_agent_model, local.ai_embedding_model] : "arn:aws:bedrock:${local.region}::foundation-model/${model}"]
     }]
   })
 }

@@ -1,0 +1,107 @@
+package com.example.helpdesk.kb;
+
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+
+import com.example.helpdesk.assist.EmbeddingClient;
+import com.example.helpdesk.common.ServiceUnavailableException;
+
+// Knowledge base operations that involve embeddings. Not @Transactional: embedding calls
+// Bedrock (once per chunk), and no database connection should be held meanwhile. The database
+// steps run in KbArticleService's and KbChunkStore's own transactions.
+@Service
+public class KnowledgeBaseService {
+
+	private static final Logger log = LoggerFactory.getLogger(KnowledgeBaseService.class);
+
+	// Nearest chunks fetched per search; several can belong to the same article
+	private static final int CANDIDATE_CHUNKS = 20;
+
+	// The nearest chunks are returned even when nothing is relevant, so weak matches are dropped.
+	// Tuned with Titan V2 on the sample articles: the right article scored 0.30-0.48 for
+	// paraphrased questions, and an unrelated question ("weather in Paris") at most 0.10.
+	static final double MIN_SIMILARITY = 0.2;
+
+	private final KbArticleService articles;
+
+	private final KbChunkStore chunks;
+
+	private final EmbeddingClient embeddings;
+
+	public KnowledgeBaseService(KbArticleService articles, KbChunkStore chunks, EmbeddingClient embeddings) {
+		this.articles = articles;
+		this.chunks = chunks;
+		this.embeddings = embeddings;
+	}
+
+	// Saving never fails because of Bedrock: if embedding fails, the article is saved anyway
+	// (chunkCount tells whether it's searchable) and can be re-embedded later.
+	public ArticleResponse create(ArticleRequest request, Long authorId) {
+		Long id = articles.create(request, authorId);
+		indexQuietly(id);
+		return articles.get(id);
+	}
+
+	// If re-embedding fails, the old chunks stay: slightly stale search beats none.
+	public ArticleResponse update(Long id, ArticleRequest request) {
+		articles.update(id, request);
+		indexQuietly(id);
+		return articles.get(id);
+	}
+
+	// Splits the article into chunks, embeds each, and replaces its stored chunks. The title is
+	// embedded with every chunk, so a chunk like "Click Save." still carries its topic.
+	public void index(Long id) {
+		KbArticleService.ArticleText article = articles.text(id).orElse(null);
+		if (article == null) {
+			return;
+		}
+		List<KbChunkStore.EmbeddedChunk> embedded = TextChunker.split(article.body())
+			.stream()
+			.map(chunk -> new KbChunkStore.EmbeddedChunk(chunk,
+					embeddings.embed(article.title() + "\n\n" + chunk)))
+			.toList();
+		chunks.replace(id, embedded);
+		log.info("Embedded article {} as {} chunks", id, embedded.size());
+	}
+
+	public int reindexAll() {
+		List<Long> ids = articles.ids();
+		ids.forEach(this::index);
+		return ids.size();
+	}
+
+	// Semantic search: embed the question, find the closest chunks, keep the best chunk per
+	// article (the list is ordered by distance, so the first one seen is the best).
+	public List<ArticleSearchResult> search(String query, int limit) {
+		float[] queryVector = embeddings.embed(query);
+		Map<Long, KbChunkStore.Match> bestPerArticle = new LinkedHashMap<>();
+		for (KbChunkStore.Match match : chunks.nearest(queryVector, CANDIDATE_CHUNKS)) {
+			if (1 - match.distance() >= MIN_SIMILARITY) {
+				bestPerArticle.putIfAbsent(match.articleId(), match);
+			}
+		}
+		List<KbChunkStore.Match> top = bestPerArticle.values().stream().limit(limit).toList();
+		Map<Long, String> titles = articles.titles(top.stream().map(KbChunkStore.Match::articleId).toList());
+		return top.stream()
+			.filter(match -> titles.containsKey(match.articleId())) // deleted meanwhile
+			.map(match -> new ArticleSearchResult(match.articleId(), titles.get(match.articleId()), match.content(),
+					1 - match.distance()))
+			.toList();
+	}
+
+	private void indexQuietly(Long id) {
+		try {
+			index(id);
+		}
+		catch (ServiceUnavailableException ex) {
+			log.warn("Couldn't embed article {}; it isn't searchable until it's re-embedded", id, ex);
+		}
+	}
+
+}

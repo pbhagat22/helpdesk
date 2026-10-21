@@ -54,5 +54,9 @@ export async function api<T>(path: string, options: { method?: string; body?: un
     const problem = (await response.json().catch(() => null)) as Problem | null
     throw new ApiError(response.status, problem)
   }
+  // 204 No Content (e.g. after a DELETE) has no body to parse
+  if (response.status === 204) {
+    return undefined as T
+  }
   return (await response.json()) as T
 }

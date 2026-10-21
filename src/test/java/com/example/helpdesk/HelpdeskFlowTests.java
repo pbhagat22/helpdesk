@@ -353,6 +353,34 @@ class HelpdeskFlowTests {
 			.hasStatus(HttpStatus.FORBIDDEN);
 	}
 
+	// Knowledge base: staff write, everyone searches by meaning. With the fake embeddings
+	// (FakeBedrockConfiguration) "meaning" is just shared words, so this checks the plumbing:
+	// chunking, pgvector storage, the <=> query and the similarity threshold.
+	@Test
+	void knowledgeBaseArticlesAreFoundBySimilarity() throws Exception {
+		RequestPostProcessor admin = login("admin@example.com", "admin-password");
+		RequestPostProcessor nina = register("flow-nina@example.com", "Nina", "nina-password");
+		MvcTestResult created = mvc.post().uri("/api/kb/articles").with(admin).contentType(MediaType.APPLICATION_JSON).content("""
+				{"title": "Resetting your password", "body": "Click forgot password on the login page.\\n\\nThe reset link is valid for 30 minutes."}
+				""").exchange();
+		assertThat(created).hasStatus(HttpStatus.CREATED).bodyJson().extractingPath("$.chunkCount").isEqualTo(1);
+		long articleId = JsonPath.<Number>read(created.getResponse().getContentAsString(), "$.id").longValue();
+
+		assertThat(mvc.get().uri("/api/kb/search").param("q", "I forgot my password").with(nina)).hasStatus(HttpStatus.OK)
+			.bodyJson()
+			.extractingPath("$[0].id")
+			.isEqualTo((int) articleId);
+		// Nothing in common: below the similarity threshold, so no results rather than "the nearest"
+		assertThat(mvc.get().uri("/api/kb/search").param("q", "zebra quantum").with(nina)).bodyJson()
+			.extractingPath("$.length()")
+			.isEqualTo(0);
+
+		assertThat(mvc.post().uri("/api/kb/articles").with(nina).contentType(MediaType.APPLICATION_JSON).content("""
+				{"title": "Free refunds", "body": "Ask for one!"}
+				"""))
+			.hasStatus(HttpStatus.FORBIDDEN);
+	}
+
 	private List<Long> searchIds(RequestPostProcessor user, String query) throws Exception {
 		MvcTestResult result = mvc.get().uri("/api/tickets/search").param("q", query).with(user).exchange();
 		assertThat(result).hasStatus(HttpStatus.OK);

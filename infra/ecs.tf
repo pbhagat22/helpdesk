@@ -26,9 +26,11 @@ data "aws_ecr_image" "app" {
 
 locals {
   # The Bedrock models behind the AI features. One place, because the task role's IAM policy
-  # (iam.tf) only allows these: a small, fast one for assist and triage, a larger one for the agent.
-  ai_model       = "qwen.qwen3-32b-v1:0"
-  ai_agent_model = "qwen.qwen3-235b-a22b-2507-v1:0"
+  # (iam.tf) only allows these: a small, fast one for assist and triage, a larger one for the agent,
+  # and the embedding model for the knowledge base.
+  ai_model           = "qwen.qwen3-32b-v1:0"
+  ai_agent_model     = "qwen.qwen3-235b-a22b-2507-v1:0"
+  ai_embedding_model = "amazon.titan-embed-text-v2:0"
 
   # Every container logs to the same group, told apart by stream prefix
   log_configuration = {
@@ -45,13 +47,14 @@ locals {
   env = { for name, vars in {
     app = {
       # The RDS endpoint is the same every time the instance is recreated
-      DB_URL                  = "jdbc:postgresql://helpdesk-db.cpow8k2qs3rt.us-east-2.rds.amazonaws.com:5432/helpdesk"
-      DB_USERNAME             = "helpdesk"
-      KAFKA_BOOTSTRAP_SERVERS = "kafka.helpdesk.local:9092"
-      ELASTICSEARCH_URIS      = "http://elasticsearch.helpdesk.local:9200"
-      HELPDESK_ADMIN_EMAIL    = "admin@example.com"
-      HELPDESK_AI_MODEL       = local.ai_model
-      HELPDESK_AI_AGENT_MODEL = local.ai_agent_model
+      DB_URL                      = "jdbc:postgresql://helpdesk-db.cpow8k2qs3rt.us-east-2.rds.amazonaws.com:5432/helpdesk"
+      DB_USERNAME                 = "helpdesk"
+      KAFKA_BOOTSTRAP_SERVERS     = "kafka.helpdesk.local:9092"
+      ELASTICSEARCH_URIS          = "http://elasticsearch.helpdesk.local:9200"
+      HELPDESK_ADMIN_EMAIL        = "admin@example.com"
+      HELPDESK_AI_MODEL           = local.ai_model
+      HELPDESK_AI_AGENT_MODEL     = local.ai_agent_model
+      HELPDESK_AI_EMBEDDING_MODEL = local.ai_embedding_model
     }
     kafka = {
       KAFKA_NODE_ID                                  = "1"

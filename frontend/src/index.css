@@ -535,3 +535,25 @@ button.link {
 .error-text {
   color: var(--error-text);
 }
+
+/* Knowledge base */
+.kb-search {
+  display: flex;
+  flex-direction: row;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+.kb-search input {
+  flex: 1;
+}
+.kb-list {
+  list-style: none;
+  padding: 0;
+}
+.kb-list li {
+  padding: 0.4rem 0;
+}
+.kb-body,
+.kb-snippet {
+  white-space: pre-wrap; /* keep the paragraphs */
+}

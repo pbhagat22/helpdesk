@@ -4,7 +4,11 @@
 #   docker compose --profile app down          stop everything (add -v to wipe the database)
 services:
   postgres:
-    image: postgres:18
+    # The official Postgres 18 image plus the pgvector extension (vector columns and similarity
+    # search, used by the knowledge base). "-trixie": the same Debian release as postgres:18, so
+    # an existing pgdata volume keeps the same text sort order (collation); the default tag is
+    # built on an older Debian and Postgres warns about a "collation version mismatch".
+    image: pgvector/pgvector:pg18-trixie
     environment:
       POSTGRES_DB: helpdesk
       POSTGRES_USER: helpdesk

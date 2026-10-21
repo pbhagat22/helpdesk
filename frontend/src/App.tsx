@@ -3,6 +3,9 @@ import { useAuth } from './auth'
 import { Layout } from './components/Layout'
 import { isStaff } from './format'
 import { AskPage } from './pages/AskPage'
+import { KbArticlePage } from './pages/KbArticlePage'
+import { KbEditPage } from './pages/KbEditPage'
+import { KbListPage } from './pages/KbListPage'
 import { LoginPage } from './pages/LoginPage'
 import { NewTicketPage } from './pages/NewTicketPage'
 import { RegisterPage } from './pages/RegisterPage'
@@ -45,7 +48,16 @@ const router = createBrowserRouter([
           { path: '/', element: <TicketListPage /> },
           { path: '/tickets/new', element: <NewTicketPage /> },
           { path: '/tickets/:id', element: <TicketDetailPage /> },
-          { element: <RequireStaff />, children: [{ path: '/ask', element: <AskPage /> }] },
+          { path: '/kb', element: <KbListPage /> },
+          { path: '/kb/:id', element: <KbArticlePage /> },
+          {
+            element: <RequireStaff />,
+            children: [
+              { path: '/ask', element: <AskPage /> },
+              { path: '/kb/new', element: <KbEditPage /> },
+              { path: '/kb/:id/edit', element: <KbEditPage /> },
+            ],
+          },
           { element: <RequireAdmin />, children: [{ path: '/users', element: <UsersPage /> }] },
         ],
       },

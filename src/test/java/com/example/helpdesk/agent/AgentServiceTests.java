@@ -84,7 +84,7 @@ class AgentServiceTests {
 	private final EchoTool tool = new EchoTool();
 
 	private final AgentService agent = new AgentService(bedrock,
-			new AiProperties("us-east-2", "small-model", "agent-model", Duration.ofSeconds(5)),
+			new AiProperties("us-east-2", "small-model", "agent-model", "test-embedding-model", Duration.ofSeconds(5)),
 			JsonMapper.builder().build(), List.of(tool));
 
 	@Test
