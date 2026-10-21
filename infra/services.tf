@@ -27,7 +27,9 @@ resource "aws_service_discovery_service" "infra" {
       ttl  = 10
     }
   }
-  health_check_custom_config {} # ECS reports task health to Cloud Map
+  # No health_check_custom_config: ECS registers each task's IP when it starts and removes it when it
+  # stops, which is all the app needs. (An empty block isn't reported back by AWS, so Terraform
+  # would want to replace these services on every plan.)
 
   force_destroy = true # deregister leftover task IPs on destroy instead of failing
 }
