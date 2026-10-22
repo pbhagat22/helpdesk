@@ -1,0 +1,15 @@
+# Local Kubernetes cluster for Stage 10:
+#   kind create cluster --config k8s/kind-config.yaml
+#   kind delete cluster --name helpdesk
+# One node only (it runs the control plane and our pods), to fit the 8 GB Mac.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: helpdesk
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      # The app's NodePort Service (step 10.2) listens on 30080 inside the node container;
+      # this publishes it on the Mac as http://localhost:30080 (localhost only).
+      - containerPort: 30080
+        hostPort: 30080
+        listenAddress: "127.0.0.1"

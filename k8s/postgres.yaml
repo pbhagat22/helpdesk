@@ -1,0 +1,92 @@
+# Postgres (with pgvector) for the local kind cluster: a Secret, a Service and a StatefulSet.
+#   kubectl apply -f k8s/postgres.yaml
+#   kubectl exec -it -n helpdesk postgres-0 -- psql -U helpdesk -d helpdesk
+---
+# Dev-only credentials, the same as compose.yaml. A real cluster gets them from a secret store
+# (on AWS: SSM or Secrets Manager), never from a committed file. stringData takes plain text;
+# Kubernetes stores it base64-encoded under .data (encoding, not encryption).
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres
+  namespace: helpdesk
+stringData:
+  POSTGRES_DB: helpdesk
+  POSTGRES_USER: helpdesk
+  POSTGRES_PASSWORD: helpdesk
+---
+# A stable name for the database: other pods connect to postgres:5432 (DNS from CoreDNS).
+# Headless (clusterIP: None): the name resolves straight to the pod's IP, with no virtual IP
+# in front. A StatefulSet needs one of these for its pods' own names (postgres-0.postgres).
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: helpdesk
+spec:
+  clusterIP: None
+  selector:
+    app: postgres
+  ports:
+    - name: postgres
+      port: 5432
+---
+# A StatefulSet, not a Deployment: its pod has a fixed name (postgres-0) and keeps the same
+# volume when it is recreated. A Deployment's pods are interchangeable and get new names.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: helpdesk
+spec:
+  serviceName: postgres
+  replicas: 1
+  # Which pods belong to this StatefulSet; must match the template's labels
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: pgvector/pgvector:pg18-trixie
+          # Every key of the Secret becomes an environment variable
+          envFrom:
+            - secretRef:
+                name: postgres
+          ports:
+            - name: postgres
+              containerPort: 5432
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql
+          # Only "ready" pods receive traffic through the Service (like Compose's healthcheck)
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "helpdesk", "-d", "helpdesk"]
+            periodSeconds: 5
+          # requests: what the scheduler reserves on the node for this pod.
+          # limits: the most it may use; going over the memory limit kills the container
+          # (OOMKilled). No CPU limit on purpose: over its request a pod only gets slowed
+          # down when the node is busy, instead of always being throttled.
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+  # One PersistentVolumeClaim per pod (data-postgres-0), created from this template.
+  # kind's local-path provisioner backs it with a directory on the node. It survives the pod
+  # and the StatefulSet being deleted; only deleting the claim, the namespace or the
+  # cluster removes the data.
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi

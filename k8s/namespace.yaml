@@ -1,0 +1,6 @@
+# Everything of the helpdesk lives in this namespace, apart from Kubernetes' own kube-system pods.
+# Deleting the namespace deletes everything in it (including the data volumes).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: helpdesk
