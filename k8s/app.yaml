@@ -1,0 +1,125 @@
+# The helpdesk app (API + UI) on the local kind cluster: a Secret, a Service and a Deployment.
+# The image only exists on the Mac, so build it and copy it into the kind node first:
+#   docker build --provenance=false --sbom=false -t helpdesk:<tag> .
+#   kind load docker-image helpdesk:<tag> --name helpdesk
+#   kubectl apply -f k8s/app.yaml
+# Then open http://localhost:30080 (kind-config.yaml maps the node port to the Mac).
+---
+# Dev-only values, the same as compose.yaml (on AWS they come from SSM Parameter Store).
+apiVersion: v1
+kind: Secret
+metadata:
+  name: app
+  namespace: helpdesk
+stringData:
+  HELPDESK_ADMIN_PASSWORD: admin-password
+  HELPDESK_JWT_SECRET: local-dev-only-jwt-secret-change-me-0123456789
+---
+# NodePort: like a normal Service (a stable virtual IP inside the cluster, spread across all
+# ready app pods), plus a fixed port opened on every node. On EKS this would be type
+# LoadBalancer or an Ingress instead, and AWS would put a load balancer in front.
+apiVersion: v1
+kind: Service
+metadata:
+  name: helpdesk
+  namespace: helpdesk
+spec:
+  type: NodePort
+  selector:
+    app: helpdesk
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      nodePort: 30080
+---
+# A Deployment, not a StatefulSet: app pods keep no data of their own (that's in Postgres),
+# so any pod can be replaced by any other. The Deployment creates a ReplicaSet, which keeps
+# `replicas` pods running; a new version means a new ReplicaSet (step 10.3, rolling updates).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: helpdesk
+  namespace: helpdesk
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: helpdesk
+  template:
+    metadata:
+      labels:
+        app: helpdesk
+    spec:
+      # No HELPDESK_PORT=tcp://... variables for our own Service: Spring would read every
+      # HELPDESK_* variable as a helpdesk.* property
+      enableServiceLinks: false
+      containers:
+        - name: helpdesk
+          image: helpdesk:a93794c
+          # Use the image copied in with `kind load`; never try a registry (it isn't in one)
+          imagePullPolicy: IfNotPresent
+          env:
+            # Service names from postgres.yaml, kafka.yaml and elasticsearch.yaml
+            - name: DB_URL
+              value: jdbc:postgresql://postgres:5432/helpdesk
+            # The same Secret Postgres itself reads, so the password is defined once
+            - name: DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: postgres
+                  key: POSTGRES_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres
+                  key: POSTGRES_PASSWORD
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: kafka:9092
+            - name: ELASTICSEARCH_URIS
+              value: http://elasticsearch:9200
+            - name: HELPDESK_ADMIN_EMAIL
+              value: admin@example.com
+            # The Dockerfile's 75% suits ECS's 2 GB; with a 1 GiB limit, half for the heap
+            # leaves room for what the JVM needs outside it (classes, threads, buffers)
+            - name: JAVA_TOOL_OPTIONS
+              value: -XX:MaxRAMPercentage=50
+          # HELPDESK_ADMIN_PASSWORD and HELPDESK_JWT_SECRET
+          envFrom:
+            - secretRef:
+                name: app
+          ports:
+            - name: http
+              containerPort: 8080
+          # Three probes, all answered by Spring Boot Actuator:
+          # startupProbe: give the app up to 5 s × 36 = 3 min to start. The other two probes
+          # only begin once it has passed, so a slow start isn't mistaken for a hung app.
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 5
+            failureThreshold: 36
+          # livenessProbe: "is the process stuck?" Failing it restarts the container. It
+          # checks only the app itself, never Postgres or Kafka: restarting the app wouldn't
+          # fix a database outage, and would restart every pod at once.
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 10
+            failureThreshold: 3
+          # readinessProbe: "can it take requests right now?" Failing it only takes the pod
+          # out of the Service until it passes again; nothing is restarted.
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            periodSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 250m
+              memory: 768Mi
+            limits:
+              memory: 1Gi
