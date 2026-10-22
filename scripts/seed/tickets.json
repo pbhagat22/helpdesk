@@ -1,0 +1,27 @@
+[
+  {
+    "title": "Charged twice this month",
+    "description": "My credit card was charged twice for the March subscription, please refund one.",
+    "priority": "HIGH"
+  },
+  {
+    "title": "Nobody in our team can log in",
+    "description": "Since 9am all 40 people in our company get 'invalid session' after entering their password. We can't work.",
+    "priority": "MEDIUM"
+  },
+  {
+    "title": "Invoices page shows a blank screen",
+    "description": "Since this morning, when I open Billing > Invoices I only get a white page. I need last month's invoice for my accountant by Friday. Chrome on Windows.",
+    "priority": "MEDIUM"
+  },
+  {
+    "title": "Save button does nothing on Settings",
+    "description": "When I change my timezone and press Save, nothing happens. Changing it from the profile page works though.",
+    "priority": "LOW"
+  },
+  {
+    "title": "Office printer jams on every page",
+    "description": "The printer on floor 2 jams after one page since this morning.",
+    "priority": "LOW"
+  }
+]
