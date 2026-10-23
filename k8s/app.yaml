@@ -1,19 +1,9 @@
-# The helpdesk app (API + UI) on the local kind cluster: a Secret, a Service and a Deployment.
-# The image only exists on the Mac, so build it and copy it into the kind node first:
+# The helpdesk app (API + UI) on the local kind cluster: a Service and a Deployment.
+# The image only exists on the Mac, so build it and copy it into the kind node first, then
+# set its tag in kustomization.yaml:
 #   docker build --provenance=false --sbom=false -t helpdesk:<tag> .
 #   kind load docker-image helpdesk:<tag> --name helpdesk
-#   kubectl apply -f k8s/app.yaml
 # Then open http://localhost:30080 (kind-config.yaml maps the node port to the Mac).
----
-# Dev-only values, the same as compose.yaml (on AWS they come from SSM Parameter Store).
-apiVersion: v1
-kind: Secret
-metadata:
-  name: app
-  namespace: helpdesk
-stringData:
-  HELPDESK_ADMIN_PASSWORD: admin-password
-  HELPDESK_JWT_SECRET: local-dev-only-jwt-secret-change-me-0123456789
 ---
 # NodePort: like a normal Service (a stable virtual IP inside the cluster, spread across all
 # ready app pods), plus a fixed port opened on every node. On EKS this would be type
@@ -22,7 +12,6 @@ apiVersion: v1
 kind: Service
 metadata:
   name: helpdesk
-  namespace: helpdesk
 spec:
   type: NodePort
   selector:
@@ -40,7 +29,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: helpdesk
-  namespace: helpdesk
 spec:
   replicas: 1
   selector:
@@ -54,9 +42,13 @@ spec:
       # No HELPDESK_PORT=tcp://... variables for our own Service: Spring would read every
       # HELPDESK_* variable as a helpdesk.* property
       enableServiceLinks: false
+      # Time from "stop" to a forced kill: the 5 s preStop sleep below plus Spring's graceful
+      # shutdown (in-flight requests finish, Kafka listeners stop), with room to spare
+      terminationGracePeriodSeconds: 45
       containers:
         - name: helpdesk
-          image: helpdesk:a93794c
+          # The tag comes from kustomization.yaml (images: newTag)
+          image: helpdesk
           # Use the image copied in with `kind load`; never try a registry (it isn't in one)
           imagePullPolicy: IfNotPresent
           env:
@@ -91,6 +83,15 @@ spec:
           ports:
             - name: http
               containerPort: 8080
+          # When a pod is stopped, Kubernetes sends SIGTERM and removes it from the Service at
+          # the same time, and the routing update takes a moment to reach kube-proxy. Without
+          # this wait, Spring stops accepting connections while a few are still routed here
+          # (measured: 2 failed requests out of 400 during a rollout). The sleep runs before
+          # SIGTERM, so the app keeps serving until traffic has moved to the other pods.
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 5
           # Three probes, all answered by Spring Boot Actuator:
           # startupProbe: give the app up to 5 s × 36 = 3 min to start. The other two probes
           # only begin once it has passed, so a slow start isn't mistaken for a hung app.

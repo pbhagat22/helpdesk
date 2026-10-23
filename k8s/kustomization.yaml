@@ -1,0 +1,46 @@
+# Everything that runs on the local kind cluster (Stage 10), put together by Kustomize:
+#   kubectl kustomize k8s     print the final YAML
+#   kubectl diff -k k8s       compare it with the cluster (like terraform plan)
+#   kubectl apply -k k8s      apply it
+# (kind-config.yaml is the cluster's own config, not a resource, so it isn't listed.)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Set on every object, so the files don't repeat it
+namespace: helpdesk
+
+resources:
+  - namespace.yaml
+  - postgres.yaml
+  - kafka.yaml
+  - elasticsearch.yaml
+  - app.yaml
+
+# Added to every top-level object (kubectl get all,secrets -l app.kubernetes.io/part-of=helpdesk),
+# but not to selectors or templates: a selector can't change after creation, and with
+# includeTemplates Kustomize would also label the StatefulSets' volumeClaimTemplates, which
+# are immutable too (the apply fails).
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: helpdesk
+
+# The app's image tag is set here only. A new version: build and `kind load` helpdesk:<tag>,
+# change newTag, apply.
+images:
+  - name: helpdesk
+    newTag: a93794c
+
+# Generated Secrets get a hash of their contents in the name (e.g. app-7c9k2m4bft), and every
+# reference to them is rewritten to match. Changing a value changes the pod template, so the
+# pods roll and pick it up. (A hand-written Secret changes silently: running pods keep the
+# values they started with.) Dev-only values, the same as compose.yaml.
+secretGenerator:
+  - name: postgres
+    literals:
+      - POSTGRES_DB=helpdesk
+      - POSTGRES_USER=helpdesk
+      - POSTGRES_PASSWORD=helpdesk
+  - name: app
+    literals:
+      - HELPDESK_ADMIN_PASSWORD=admin-password
+      - HELPDESK_JWT_SECRET=local-dev-only-jwt-secret-change-me-0123456789

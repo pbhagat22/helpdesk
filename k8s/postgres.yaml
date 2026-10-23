@@ -1,19 +1,6 @@
-# Postgres (with pgvector) for the local kind cluster: a Secret, a Service and a StatefulSet.
-#   kubectl apply -f k8s/postgres.yaml
+# Postgres (with pgvector) for the local kind cluster: a Service and a StatefulSet. Its
+# credentials are the `postgres` Secret generated in kustomization.yaml.
 #   kubectl exec -it -n helpdesk postgres-0 -- psql -U helpdesk -d helpdesk
----
-# Dev-only credentials, the same as compose.yaml. A real cluster gets them from a secret store
-# (on AWS: SSM or Secrets Manager), never from a committed file. stringData takes plain text;
-# Kubernetes stores it base64-encoded under .data (encoding, not encryption).
-apiVersion: v1
-kind: Secret
-metadata:
-  name: postgres
-  namespace: helpdesk
-stringData:
-  POSTGRES_DB: helpdesk
-  POSTGRES_USER: helpdesk
-  POSTGRES_PASSWORD: helpdesk
 ---
 # A stable name for the database: other pods connect to postgres:5432 (DNS from CoreDNS).
 # Headless (clusterIP: None): the name resolves straight to the pod's IP, with no virtual IP
@@ -22,7 +9,6 @@ apiVersion: v1
 kind: Service
 metadata:
   name: postgres
-  namespace: helpdesk
 spec:
   clusterIP: None
   selector:
@@ -37,7 +23,6 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: postgres
-  namespace: helpdesk
 spec:
   serviceName: postgres
   replicas: 1
