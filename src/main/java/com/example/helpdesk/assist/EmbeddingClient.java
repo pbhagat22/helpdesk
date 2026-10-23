@@ -38,10 +38,14 @@ public class EmbeddingClient {
 
 	private final JsonMapper jsonMapper;
 
-	public EmbeddingClient(BedrockRuntimeClient bedrock, AiProperties properties, JsonMapper jsonMapper) {
+	private final AiUsageService usage;
+
+	public EmbeddingClient(BedrockRuntimeClient bedrock, AiProperties properties, JsonMapper jsonMapper,
+			AiUsageService usage) {
 		this.bedrock = bedrock;
 		this.properties = properties;
 		this.jsonMapper = jsonMapper;
+		this.usage = usage;
 	}
 
 	record TitanResponse(List<Float> embedding, int inputTextTokenCount) {
@@ -49,7 +53,8 @@ public class EmbeddingClient {
 
 	// normalize: every vector gets length 1, so cosine distance (pgvector's <=>) only compares
 	// directions, i.e. meaning, not how long the text was.
-	public float[] embed(String text) {
+	// caller: who the tokens are counted against (embeddings bill input tokens only).
+	public float[] embed(String text, AiCaller caller) {
 		String body = jsonMapper
 			.writeValueAsString(Map.of("inputText", text, "dimensions", DIMENSIONS, "normalize", true));
 		InvokeModelResponse response;
@@ -71,6 +76,7 @@ public class EmbeddingClient {
 		catch (JacksonException ex) {
 			throw new ServiceUnavailableException("The embedding model returned an unexpected response", ex);
 		}
+		usage.record(caller, properties.embeddingModel(), titan.inputTextTokenCount(), 0);
 		if (titan.embedding() == null || titan.embedding().size() != DIMENSIONS) {
 			throw new ServiceUnavailableException("The embedding model returned a vector of the wrong size", null);
 		}

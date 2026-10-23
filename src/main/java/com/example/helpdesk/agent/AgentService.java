@@ -11,7 +11,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import com.example.helpdesk.assist.AiCaller;
+import com.example.helpdesk.assist.AiFeature;
 import com.example.helpdesk.assist.AiProperties;
+import com.example.helpdesk.assist.AiUsageService;
 import com.example.helpdesk.common.ServiceUnavailableException;
 import com.example.helpdesk.security.HelpdeskUserDetails;
 
@@ -102,15 +105,18 @@ public class AgentService {
 
 	private final ExternalMcpTools externalTools;
 
+	private final AiUsageService usage;
+
 	private final Set<String> ownToolNames;
 
 	public AgentService(BedrockRuntimeClient bedrock, AiProperties properties, JsonMapper jsonMapper,
-			AgentToolRunner toolRunner, ExternalMcpTools externalTools) {
+			AgentToolRunner toolRunner, ExternalMcpTools externalTools, AiUsageService usage) {
 		this.bedrock = bedrock;
 		this.properties = properties;
 		this.jsonMapper = jsonMapper;
 		this.toolRunner = toolRunner;
 		this.externalTools = externalTools;
+		this.usage = usage;
 		this.ownToolNames = toolRunner.tools().stream().map(AgentTool::name).collect(Collectors.toSet());
 	}
 
@@ -131,6 +137,8 @@ public class AgentService {
 			outputTokens += response.usage().outputTokens();
 			log.info("AI agent call {} for user {}: model={}, stop={}, input tokens={}, output tokens={}", call,
 					me.getId(), properties.agentModel(), response.stopReason(), response.usage().inputTokens(), response.usage().outputTokens());
+			usage.record(AiCaller.user(AiFeature.AGENT, me.getId()), properties.agentModel(),
+					response.usage().inputTokens(), response.usage().outputTokens());
 
 			// The model's message goes into the history unchanged, including any reasoning blocks
 			Message reply = response.output().message();

@@ -18,6 +18,8 @@ import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import com.example.helpdesk.assist.AiCaller;
+import com.example.helpdesk.assist.AiFeature;
 import com.example.helpdesk.assist.EmbeddingClient;
 import com.example.helpdesk.common.ServiceUnavailableException;
 
@@ -36,11 +38,11 @@ class KnowledgeBaseServiceTests {
 	@Test
 	void indexEmbedsEachChunkWithTheTitle() {
 		given(articles.text(1L)).willReturn(Optional.of(new KbArticleService.ArticleText("Passwords", "Click reset.")));
-		given(embeddings.embed(anyString())).willReturn(vector);
+		given(embeddings.embed(anyString(), any())).willReturn(vector);
 
-		service.index(1L);
+		service.index(1L, 2L);
 
-		then(embeddings).should().embed("Passwords\n\nClick reset.");
+		then(embeddings).should().embed("Passwords\n\nClick reset.", AiCaller.user(AiFeature.KB_INDEX, 2L));
 		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<KbChunkStore.EmbeddedChunk>> stored = ArgumentCaptor.forClass(List.class);
 		then(chunks).should().replace(eq(1L), stored.capture());
@@ -53,7 +55,7 @@ class KnowledgeBaseServiceTests {
 		ArticleRequest request = new ArticleRequest("Passwords", "Click reset.");
 		given(articles.create(request, 2L)).willReturn(1L);
 		given(articles.text(1L)).willReturn(Optional.of(new KbArticleService.ArticleText("Passwords", "Click reset.")));
-		given(embeddings.embed(anyString())).willThrow(new ServiceUnavailableException("down", null));
+		given(embeddings.embed(anyString(), any())).willThrow(new ServiceUnavailableException("down", null));
 
 		service.create(request, 2L);
 
@@ -63,13 +65,13 @@ class KnowledgeBaseServiceTests {
 
 	@Test
 	void searchKeepsTheBestChunkPerArticleAndDropsWeakMatches() {
-		given(embeddings.embed("forgot password")).willReturn(vector);
+		given(embeddings.embed("forgot password", AiCaller.user(AiFeature.KB_SEARCH, 2L))).willReturn(vector);
 		given(chunks.nearest(eq(vector), anyInt())).willReturn(List.of(new KbChunkStore.Match(1, 0, "best", 0.5),
 				new KbChunkStore.Match(1, 1, "second best of article 1", 0.6),
 				new KbChunkStore.Match(2, 0, "billing", 0.7), new KbChunkStore.Match(3, 0, "weather", 0.95)));
 		given(articles.titles(List.of(1L, 2L))).willReturn(Map.of(1L, "Passwords", 2L, "Billing"));
 
-		List<ArticleSearchResult> results = service.search("forgot password", 5);
+		List<ArticleSearchResult> results = service.search("forgot password", 5, 2L);
 
 		assertThat(results).containsExactly(new ArticleSearchResult(1L, "Passwords", "best", 0.5),
 				new ArticleSearchResult(2L, "Billing", "billing", 1 - 0.7));

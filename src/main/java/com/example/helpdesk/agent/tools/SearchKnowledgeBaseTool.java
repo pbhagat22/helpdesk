@@ -65,7 +65,7 @@ class SearchKnowledgeBaseTool implements AgentTool<SearchKnowledgeBaseTool.Input
 		if (input.question() == null || input.question().isBlank()) {
 			throw new IllegalArgumentException("question must not be empty");
 		}
-		return knowledgeBase.search(input.question(), LIMIT)
+		return knowledgeBase.search(input.question(), LIMIT, me.getId())
 			.stream()
 			.map(result -> new Hit(result.id(), result.title(), result.snippet()))
 			.toList();

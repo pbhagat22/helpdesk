@@ -330,6 +330,14 @@ class HelpdeskFlowTests {
 			.extractingPath("$[*].type")
 			.asArray()
 			.containsExactly("CREATED", "PRIORITY_CHANGED", "CATEGORY_CHANGED"));
+
+		// The triage call went into the usage ledger, priced (the default model has a price)
+		MvcTestResult usage = mvc.get().uri("/api/admin/ai/usage?days=1").with(admin).exchange();
+		assertThat(usage).hasStatus(HttpStatus.OK).bodyJson().extractingPath("$.days[*].feature").asArray().contains("TRIAGE");
+		assertThat(usage).bodyJson().extractingPath("$.unpricedModels").asArray().isEmpty();
+		assertThat(usage).bodyJson()
+			.extractingPath("$.estimatedCostUsd")
+			.satisfies(cost -> assertThat(((Number) cost).doubleValue()).isPositive());
 	}
 
 	// The agent loop with the real tools and services; only the model is fake (it asks for

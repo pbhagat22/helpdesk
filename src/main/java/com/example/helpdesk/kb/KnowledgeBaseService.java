@@ -8,6 +8,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import com.example.helpdesk.assist.AiCaller;
+import com.example.helpdesk.assist.AiFeature;
 import com.example.helpdesk.assist.EmbeddingClient;
 import com.example.helpdesk.common.ServiceUnavailableException;
 
@@ -43,43 +45,46 @@ public class KnowledgeBaseService {
 	// (chunkCount tells whether it's searchable) and can be re-embedded later.
 	public ArticleResponse create(ArticleRequest request, Long authorId) {
 		Long id = articles.create(request, authorId);
-		indexQuietly(id);
+		indexQuietly(id, authorId);
 		return articles.get(id);
 	}
 
 	// If re-embedding fails, the old chunks stay: slightly stale search beats none.
-	public ArticleResponse update(Long id, ArticleRequest request) {
+	// userId: who edits it; the embedding tokens are counted against them.
+	public ArticleResponse update(Long id, ArticleRequest request, Long userId) {
 		articles.update(id, request);
-		indexQuietly(id);
+		indexQuietly(id, userId);
 		return articles.get(id);
 	}
 
 	// Splits the article into chunks, embeds each, and replaces its stored chunks. The title is
 	// embedded with every chunk, so a chunk like "Click Save." still carries its topic.
-	public void index(Long id) {
+	public void index(Long id, Long userId) {
 		KbArticleService.ArticleText article = articles.text(id).orElse(null);
 		if (article == null) {
 			return;
 		}
+		AiCaller caller = AiCaller.user(AiFeature.KB_INDEX, userId);
 		List<KbChunkStore.EmbeddedChunk> embedded = TextChunker.split(article.body())
 			.stream()
 			.map(chunk -> new KbChunkStore.EmbeddedChunk(chunk,
-					embeddings.embed(article.title() + "\n\n" + chunk)))
+					embeddings.embed(article.title() + "\n\n" + chunk, caller)))
 			.toList();
 		chunks.replace(id, embedded);
 		log.info("Embedded article {} as {} chunks", id, embedded.size());
 	}
 
-	public int reindexAll() {
+	public int reindexAll(Long userId) {
 		List<Long> ids = articles.ids();
-		ids.forEach(this::index);
+		ids.forEach(id -> index(id, userId));
 		return ids.size();
 	}
 
 	// Semantic search: embed the question, find the closest chunks, keep the best chunk per
 	// article (the list is ordered by distance, so the first one seen is the best).
-	public List<ArticleSearchResult> search(String query, int limit) {
-		float[] queryVector = embeddings.embed(query);
+	// userId: who searches (directly, or through assist or the agent's tool).
+	public List<ArticleSearchResult> search(String query, int limit, Long userId) {
+		float[] queryVector = embeddings.embed(query, AiCaller.user(AiFeature.KB_SEARCH, userId));
 		Map<Long, KbChunkStore.Match> bestPerArticle = new LinkedHashMap<>();
 		for (KbChunkStore.Match match : chunks.nearest(queryVector, CANDIDATE_CHUNKS)) {
 			if (1 - match.distance() >= MIN_SIMILARITY) {
@@ -95,9 +100,9 @@ public class KnowledgeBaseService {
 			.toList();
 	}
 
-	private void indexQuietly(Long id) {
+	private void indexQuietly(Long id, Long userId) {
 		try {
-			index(id);
+			index(id, userId);
 		}
 		catch (ServiceUnavailableException ex) {
 			log.warn("Couldn't embed article {}; it isn't searchable until it's re-embedded", id, ex);

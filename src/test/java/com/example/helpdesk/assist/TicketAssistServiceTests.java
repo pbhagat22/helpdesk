@@ -2,6 +2,7 @@ package com.example.helpdesk.assist;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
@@ -85,9 +86,10 @@ class TicketAssistServiceTests {
 
 	@Test
 	void suggestSearchesTheKnowledgeBaseAndReturnsTheArticlesUsed() {
-		given(knowledgeBase.search(contains("Printer on fire"), eq(TicketAssistService.MAX_ARTICLES)))
+		given(knowledgeBase.search(contains("Printer on fire"), eq(TicketAssistService.MAX_ARTICLES), eq(bob.getId())))
 			.willReturn(List.of(printerArticle));
-		given(llm.ask(eq("assist ticket 1"), eq(TicketAssistService.SYSTEM_PROMPT),
+		given(llm.ask(eq(AiCaller.user(AiFeature.ASSIST, bob.getId())), eq("assist ticket 1"),
+				eq(TicketAssistService.SYSTEM_PROMPT),
 				contains("<article id=\"7\""), eq("ticket_assist"), eq(TicketAssistService.SCHEMA),
 				eq(AssistAnswer.class)))
 			.willReturn(new AssistAnswer("Printer smoking.", "Please keep it unplugged.", List.of(7L)));
@@ -104,9 +106,9 @@ class TicketAssistServiceTests {
 
 	@Test
 	void suggestStillWorksWhenTheKnowledgeBaseIsUnavailable() {
-		given(knowledgeBase.search(anyString(), anyInt()))
+		given(knowledgeBase.search(anyString(), anyInt(), any()))
 			.willThrow(new ServiceUnavailableException("Embeddings unavailable", null));
-		given(llm.ask(anyString(), anyString(), contains("Did you unplug it?"), anyString(), anyString(),
+		given(llm.ask(any(), anyString(), anyString(), contains("Did you unplug it?"), anyString(), anyString(),
 				eq(AssistAnswer.class)))
 			.willReturn(new AssistAnswer("Printer smoking.", "Please keep it unplugged.", List.of()));
 

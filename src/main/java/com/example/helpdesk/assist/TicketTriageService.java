@@ -98,8 +98,8 @@ public class TicketTriageService {
 			log.warn("Ticket {} no longer exists; not triaging it", ticketId);
 			return;
 		}
-		TriageAnswer answer = llm.ask("triage ticket " + ticketId, SYSTEM_PROMPT, prompt(ticket.get()),
-				"ticket_triage", SCHEMA, TriageAnswer.class);
+		TriageAnswer answer = llm.ask(AiCaller.background(AiFeature.TRIAGE), "triage ticket " + ticketId,
+				SYSTEM_PROMPT, prompt(ticket.get()), "ticket_triage", SCHEMA, TriageAnswer.class);
 		String reason = answer.reason().length() > MAX_REASON_LENGTH
 				? answer.reason().substring(0, MAX_REASON_LENGTH - 1) + "…" : answer.reason();
 		try {

@@ -62,7 +62,8 @@ class TicketTriageServiceTests {
 	@Test
 	void triageStoresTheModelsSuggestion() {
 		given(ticketService.find(1L)).willReturn(Optional.of(ticket));
-		given(llm.ask(eq("triage ticket 1"), eq(TicketTriageService.SYSTEM_PROMPT), contains("Invoice page blank"),
+		given(llm.ask(eq(AiCaller.background(AiFeature.TRIAGE)), eq("triage ticket 1"),
+				eq(TicketTriageService.SYSTEM_PROMPT), contains("Invoice page blank"),
 				eq("ticket_triage"), eq(TicketTriageService.SCHEMA), eq(TriageAnswer.class)))
 			.willReturn(new TriageAnswer(Priority.HIGH, Category.BILLING, "Invoice needed by a deadline."));
 
@@ -79,7 +80,7 @@ class TicketTriageServiceTests {
 	@Test
 	void longReasonIsShortenedToFitTheColumn() {
 		given(ticketService.find(1L)).willReturn(Optional.of(ticket));
-		given(llm.ask(anyString(), anyString(), anyString(), anyString(), anyString(), eq(TriageAnswer.class)))
+		given(llm.ask(any(), anyString(), anyString(), anyString(), anyString(), anyString(), eq(TriageAnswer.class)))
 			.willReturn(new TriageAnswer(Priority.LOW, Category.OTHER, "x".repeat(800)));
 
 		service.triage(1L);

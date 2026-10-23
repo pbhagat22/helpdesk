@@ -102,9 +102,9 @@ public class TicketAssistService {
 	public AssistResponse suggest(Long ticketId, HelpdeskUserDetails me) {
 		TicketResponse ticket = ticketService.get(ticketId, me);
 		List<CommentResponse> comments = ticketService.listComments(ticketId, me);
-		List<ArticleSearchResult> articles = relevantArticles(ticket);
-		AssistAnswer answer = llm.ask("assist ticket " + ticketId, SYSTEM_PROMPT, prompt(ticket, comments, articles),
-				"ticket_assist", SCHEMA, AssistAnswer.class);
+		List<ArticleSearchResult> articles = relevantArticles(ticket, me);
+		AssistAnswer answer = llm.ask(AiCaller.user(AiFeature.ASSIST, me.getId()), "assist ticket " + ticketId,
+				SYSTEM_PROMPT, prompt(ticket, comments, articles), "ticket_assist", SCHEMA, AssistAnswer.class);
 		return new AssistResponse(answer.summary(), answer.suggestedReply(),
 				sources(answer.sourceArticleIds(), articles));
 	}
@@ -112,9 +112,9 @@ public class TicketAssistService {
 	// The retrieval step. The search query is the ticket's title and description: that's what
 	// the problem is about, while the comments are mostly back-and-forth. If embedding fails,
 	// assist still works, just without articles, as it did before the knowledge base existed.
-	private List<ArticleSearchResult> relevantArticles(TicketResponse ticket) {
+	private List<ArticleSearchResult> relevantArticles(TicketResponse ticket, HelpdeskUserDetails me) {
 		try {
-			return knowledgeBase.search(ticket.title() + "\n\n" + ticket.description(), MAX_ARTICLES);
+			return knowledgeBase.search(ticket.title() + "\n\n" + ticket.description(), MAX_ARTICLES, me.getId());
 		}
 		catch (ServiceUnavailableException ex) {
 			log.warn("Knowledge base search failed for ticket {}; assisting without articles", ticket.id(), ex);

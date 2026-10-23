@@ -42,7 +42,7 @@ class KbControllerTests {
 
 	@Test
 	void customersCanSearch() {
-		given(knowledgeBase.search("forgot password", 5))
+		given(knowledgeBase.search("forgot password", 5, alice.getId()))
 			.willReturn(List.of(new ArticleSearchResult(1L, "Passwords", "Click reset.", 0.4)));
 
 		assertThat(mvc.get().uri("/api/kb/search?q=forgot password").with(user(alice))).hasStatusOk()

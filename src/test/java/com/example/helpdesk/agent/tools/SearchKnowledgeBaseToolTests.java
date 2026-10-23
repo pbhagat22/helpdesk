@@ -25,7 +25,7 @@ class SearchKnowledgeBaseToolTests {
 
 	@Test
 	void returnsArticlesWithExcerptsWithoutTheScore() {
-		given(knowledgeBase.search("double charge", SearchKnowledgeBaseTool.LIMIT)).willReturn(
+		given(knowledgeBase.search("double charge", SearchKnowledgeBaseTool.LIMIT, bob.getId())).willReturn(
 				List.of(new ArticleSearchResult(4L, "Refunds and duplicate charges", "Refunded in 5 to 10 days.", 0.4)));
 
 		assertThat(tool.run(new SearchKnowledgeBaseTool.Input("double charge"), bob)).containsExactly(

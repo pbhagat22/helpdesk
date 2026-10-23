@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 import java.time.Duration;
 import java.util.List;
@@ -34,11 +35,16 @@ class BedrockJsonClientTests {
 
 	private final BedrockRuntimeClient bedrock = mock(BedrockRuntimeClient.class);
 
+	private final AiUsageService usage = mock(AiUsageService.class);
+
 	private final BedrockJsonClient client = new BedrockJsonClient(bedrock,
-			new AiProperties("us-east-2", "test-model", "test-agent-model", "test-embedding-model", Duration.ofSeconds(5)), JsonMapper.builder().build());
+			new AiProperties("us-east-2", "test-model", "test-agent-model", "test-embedding-model", Duration.ofSeconds(5)), JsonMapper.builder().build(),
+			usage);
+
+	private final AiCaller caller = AiCaller.user(AiFeature.ASSIST, 2L);
 
 	private AssistAnswer askForAssist() {
-		return client.ask("test", "system prompt", "user prompt", "ticket_assist", TicketAssistService.SCHEMA,
+		return client.ask(caller, "test", "system prompt", "user prompt", "ticket_assist", TicketAssistService.SCHEMA,
 				AssistAnswer.class);
 	}
 
@@ -60,6 +66,7 @@ class BedrockJsonClientTests {
 		assertThat(request.outputConfig().textFormat().type()).isEqualTo(OutputFormatType.JSON_SCHEMA);
 		assertThat(request.outputConfig().textFormat().structure().jsonSchema().schema())
 			.isEqualTo(TicketAssistService.SCHEMA);
+		verify(usage).record(caller, "test-model", 120, 40);
 	}
 
 	@Test
@@ -69,7 +76,7 @@ class BedrockJsonClientTests {
 		given(bedrock.converse(any(ConverseRequest.class))).willReturn(response(StopReason.END_TURN, reasoning,
 				ContentBlock.fromText("{\"priority\": \"HIGH\", \"category\": \"BILLING\", \"reason\": \"Deadline.\"}")));
 
-		TriageAnswer answer = client.ask("test", "s", "u", "ticket_triage", TicketTriageService.SCHEMA,
+		TriageAnswer answer = client.ask(caller, "test", "s", "u", "ticket_triage", TicketTriageService.SCHEMA,
 				TriageAnswer.class);
 
 		assertThat(answer).isEqualTo(new TriageAnswer(Priority.HIGH, Category.BILLING, "Deadline."));
@@ -81,6 +88,8 @@ class BedrockJsonClientTests {
 			.willReturn(response(StopReason.MAX_TOKENS, ContentBlock.fromText("{\"summary\": \"Printer")));
 
 		assertThatThrownBy(this::askForAssist).isInstanceOf(ServiceUnavailableException.class);
+		// A cut-off answer is billed all the same
+		verify(usage).record(caller, "test-model", 120, 40);
 	}
 
 	@Test
@@ -97,7 +106,7 @@ class BedrockJsonClientTests {
 		given(bedrock.converse(any(ConverseRequest.class))).willReturn(response(StopReason.END_TURN,
 				"{\"priority\": \"CRITICAL\", \"category\": \"BUG\", \"reason\": \"Bad.\"}"));
 
-		assertThatThrownBy(() -> client.ask("test", "s", "u", "ticket_triage", TicketTriageService.SCHEMA,
+		assertThatThrownBy(() -> client.ask(caller, "test", "s", "u", "ticket_triage", TicketTriageService.SCHEMA,
 				TriageAnswer.class))
 			.isInstanceOf(ServiceUnavailableException.class);
 	}
@@ -118,6 +127,7 @@ class BedrockJsonClientTests {
 
 		assertThatThrownBy(this::askForAssist).isInstanceOf(ServiceUnavailableException.class)
 			.hasMessageContaining("unavailable");
+		verifyNoInteractions(usage);
 	}
 
 	private static ConverseResponse response(StopReason stopReason, String text) {

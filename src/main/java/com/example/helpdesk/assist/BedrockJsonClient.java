@@ -42,16 +42,20 @@ public class BedrockJsonClient {
 
 	private final JsonMapper jsonMapper;
 
-	public BedrockJsonClient(BedrockRuntimeClient bedrock, AiProperties properties, JsonMapper jsonMapper) {
+	private final AiUsageService usage;
+
+	public BedrockJsonClient(BedrockRuntimeClient bedrock, AiProperties properties, JsonMapper jsonMapper,
+			AiUsageService usage) {
 		this.bedrock = bedrock;
 		this.properties = properties;
 		this.jsonMapper = jsonMapper;
+		this.usage = usage;
 	}
 
-	// task: a short label for the logs, e.g. "assist ticket 4".
-	// Throws ServiceUnavailableException if there's no complete, valid answer.
-	public <T extends Record> T ask(String task, String systemPrompt, String userPrompt, String schemaName,
-			String schema, Class<T> answerType) {
+	// caller: who the tokens are counted against. task: a short label for the logs, e.g.
+	// "assist ticket 4". Throws ServiceUnavailableException if there's no complete, valid answer.
+	public <T extends Record> T ask(AiCaller caller, String task, String systemPrompt, String userPrompt,
+			String schemaName, String schema, Class<T> answerType) {
 		ConverseRequest request = ConverseRequest.builder()
 			.modelId(properties.model())
 			.system(SystemContentBlock.fromText(systemPrompt))
@@ -75,9 +79,10 @@ public class BedrockJsonClient {
 			throw new ServiceUnavailableException("The AI assistant is unavailable right now", ex);
 		}
 
-		// Tokens are what Bedrock bills for, so log them for every call.
+		// Tokens are what Bedrock bills for, so log and record them for every call.
 		log.info("AI {}: model={}, stop={}, input tokens={}, output tokens={}", task, properties.model(),
 				response.stopReason(), response.usage().inputTokens(), response.usage().outputTokens());
+		usage.record(caller, properties.model(), response.usage().inputTokens(), response.usage().outputTokens());
 
 		// Anything but a normal end (e.g. max_tokens: cut off mid-answer) means there's no complete answer.
 		if (response.stopReason() != StopReason.END_TURN) {
