@@ -42,13 +42,16 @@ public class EmbeddingClient {
 
 	private final AiBudget budget;
 
+	private final BedrockCircuitBreakers breakers;
+
 	public EmbeddingClient(BedrockRuntimeClient bedrock, AiProperties properties, JsonMapper jsonMapper,
-			AiUsageService usage, AiBudget budget) {
+			AiUsageService usage, AiBudget budget, BedrockCircuitBreakers breakers) {
 		this.bedrock = bedrock;
 		this.properties = properties;
 		this.jsonMapper = jsonMapper;
 		this.usage = usage;
 		this.budget = budget;
+		this.breakers = breakers;
 	}
 
 	record TitanResponse(List<Float> embedding, int inputTextTokenCount) {
@@ -64,12 +67,13 @@ public class EmbeddingClient {
 			.writeValueAsString(Map.of("inputText", text, "dimensions", DIMENSIONS, "normalize", true));
 		InvokeModelResponse response;
 		try {
-			response = bedrock.invokeModel(InvokeModelRequest.builder()
+			InvokeModelRequest request = InvokeModelRequest.builder()
 				.modelId(properties.embeddingModel())
 				.contentType("application/json")
 				.accept("application/json")
 				.body(SdkBytes.fromUtf8String(body))
-				.build());
+				.build();
+			response = breakers.call(properties.embeddingModel(), () -> bedrock.invokeModel(request));
 		}
 		catch (SdkException ex) {
 			throw new ServiceUnavailableException("The embedding model is unavailable right now", ex);

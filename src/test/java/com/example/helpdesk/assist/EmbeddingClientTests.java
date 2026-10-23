@@ -17,6 +17,7 @@ import org.mockito.ArgumentCaptor;
 import com.example.helpdesk.common.ServiceUnavailableException;
 import com.example.helpdesk.user.Role;
 
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.services.bedrockruntime.BedrockRuntimeClient;
 import software.amazon.awssdk.services.bedrockruntime.model.InvokeModelRequest;
@@ -32,9 +33,12 @@ class EmbeddingClientTests {
 
 	private final AiBudget budget = mock(AiBudget.class);
 
+	// A real registry with Resilience4j's defaults (100 calls before it can open): never opens here
+	private final BedrockCircuitBreakers breakers = new BedrockCircuitBreakers(CircuitBreakerRegistry.ofDefaults());
+
 	private final EmbeddingClient client = new EmbeddingClient(bedrock,
 			new AiProperties("us-east-2", "m", "a", "titan-test", Duration.ofSeconds(5)), JsonMapper.builder().build(),
-			usage, budget);
+			usage, budget, breakers);
 
 	private final AiCaller caller = new AiCaller(AiFeature.KB_SEARCH, 2L, Role.CUSTOMER);
 

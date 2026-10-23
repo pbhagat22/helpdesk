@@ -16,9 +16,13 @@ import com.example.helpdesk.assist.AiCaller;
 import com.example.helpdesk.assist.AiFeature;
 import com.example.helpdesk.assist.AiProperties;
 import com.example.helpdesk.assist.AiUsageService;
+import com.example.helpdesk.assist.BedrockCircuitBreakers;
 import com.example.helpdesk.common.ServiceUnavailableException;
 import com.example.helpdesk.security.HelpdeskUserDetails;
 
+import io.github.resilience4j.bulkhead.Bulkhead;
+import io.github.resilience4j.bulkhead.BulkheadFullException;
+import io.github.resilience4j.bulkhead.BulkheadRegistry;
 import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.services.bedrockruntime.BedrockRuntimeClient;
 import software.amazon.awssdk.services.bedrockruntime.model.ContentBlock;
@@ -110,10 +114,15 @@ public class AgentService {
 
 	private final AiBudget budget;
 
+	private final BedrockCircuitBreakers breakers;
+
+	private final Bulkhead bulkhead;
+
 	private final Set<String> ownToolNames;
 
 	public AgentService(BedrockRuntimeClient bedrock, AiProperties properties, JsonMapper jsonMapper,
-			AgentToolRunner toolRunner, ExternalMcpTools externalTools, AiUsageService usage, AiBudget budget) {
+			AgentToolRunner toolRunner, ExternalMcpTools externalTools, AiUsageService usage, AiBudget budget,
+			BedrockCircuitBreakers breakers, BulkheadRegistry bulkheads) {
 		this.bedrock = bedrock;
 		this.properties = properties;
 		this.jsonMapper = jsonMapper;
@@ -121,10 +130,26 @@ public class AgentService {
 		this.externalTools = externalTools;
 		this.usage = usage;
 		this.budget = budget;
+		this.breakers = breakers;
+		this.bulkhead = bulkheads.bulkhead("agent");
 		this.ownToolNames = toolRunner.tools().stream().map(AgentTool::name).collect(Collectors.toSet());
 	}
 
+	// A bulkhead (resilience4j.bulkhead.instances.agent) limits how many questions run at once.
+	// Each one holds a request thread for 5-30 seconds of model calls; without a limit, a burst
+	// of questions could take every thread and stall the rest of the app. One more than the
+	// limit is turned away at once (503) instead of queueing.
 	public AgentResponse ask(String question, HelpdeskUserDetails me) {
+		try {
+			return bulkhead.executeSupplier(() -> runLoop(question, me));
+		}
+		catch (BulkheadFullException ex) {
+			throw new ServiceUnavailableException("The AI agent is busy with other questions; try again in a moment",
+					ex);
+		}
+	}
+
+	private AgentResponse runLoop(String question, HelpdeskUserDetails me) {
 		String system = SYSTEM_PROMPT.formatted(LocalDate.now(), me.getUsername(), me.getId(), me.getRole());
 		// The whole conversation so far; the model sees all of it on every call
 		List<Message> messages = new ArrayList<>();
@@ -187,14 +212,15 @@ public class AgentService {
 	}
 
 	private ConverseResponse converse(String system, List<Message> messages) {
+		ConverseRequest request = ConverseRequest.builder()
+			.modelId(properties.agentModel())
+			.system(SystemContentBlock.fromText(system))
+			.messages(messages)
+			.toolConfig(toolConfiguration())
+			.inferenceConfig(config -> config.maxTokens(MAX_TOKENS))
+			.build();
 		try {
-			return bedrock.converse(ConverseRequest.builder()
-				.modelId(properties.agentModel())
-				.system(SystemContentBlock.fromText(system))
-				.messages(messages)
-				.toolConfig(toolConfiguration())
-				.inferenceConfig(config -> config.maxTokens(MAX_TOKENS))
-				.build());
+			return breakers.call(properties.agentModel(), () -> bedrock.converse(request));
 		}
 		catch (SdkException ex) {
 			throw new ServiceUnavailableException("The AI agent is unavailable right now", ex);

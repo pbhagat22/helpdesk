@@ -12,6 +12,9 @@ import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -21,11 +24,15 @@ import com.example.helpdesk.assist.AiCaller;
 import com.example.helpdesk.assist.AiFeature;
 import com.example.helpdesk.assist.AiProperties;
 import com.example.helpdesk.assist.AiUsageService;
+import com.example.helpdesk.assist.BedrockCircuitBreakers;
 import com.example.helpdesk.common.NotFoundException;
 import com.example.helpdesk.common.ServiceUnavailableException;
 import com.example.helpdesk.security.HelpdeskUserDetails;
 import com.example.helpdesk.user.Role;
 
+import io.github.resilience4j.bulkhead.BulkheadConfig;
+import io.github.resilience4j.bulkhead.BulkheadRegistry;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.spec.McpSchema;
 
@@ -100,10 +107,14 @@ class AgentServiceTests {
 
 	private final AiBudget budget = mock(AiBudget.class);
 
+	// A real registry with Resilience4j's defaults (100 calls before it can open): never opens here
+	private final BedrockCircuitBreakers breakers = new BedrockCircuitBreakers(CircuitBreakerRegistry.ofDefaults());
+
 	// No external MCP servers, except in the test that's about them
 	private final AgentService agent = new AgentService(bedrock, properties, jsonMapper,
 			new AgentToolRunner(jsonMapper, List.of(tool)),
-			new ExternalMcpTools(List.of(), new AgentProperties(null), Clock.systemUTC()), usage, budget);
+			new ExternalMcpTools(List.of(), new AgentProperties(null), Clock.systemUTC()), usage, budget, breakers,
+			BulkheadRegistry.ofDefaults());
 
 	@Test
 	void runsTheRequestedToolAndSendsTheResultBack() {
@@ -235,7 +246,8 @@ class AgentServiceTests {
 			.build());
 		given(docs.callTool(any())).willReturn(McpSchema.CallToolResult.builder().addTextContent("Lambda: at most 15 minutes").build());
 		return new AgentService(bedrock, properties, jsonMapper, new AgentToolRunner(jsonMapper, List.of(tool)),
-				new ExternalMcpTools(List.of(docs), new AgentProperties(List.of("search_docs")), Clock.systemUTC()), usage, budget);
+				new ExternalMcpTools(List.of(docs), new AgentProperties(List.of("search_docs")), Clock.systemUTC()), usage, budget, breakers,
+			BulkheadRegistry.ofDefaults());
 	}
 
 	// A model that never stops calling tools must not loop (and bill) forever.
@@ -247,6 +259,33 @@ class AgentServiceTests {
 		assertThatThrownBy(() -> agent.ask("Loop forever", bob)).isInstanceOf(ServiceUnavailableException.class)
 			.hasMessageContaining("steps");
 		verify(bedrock, times(AgentService.MAX_MODEL_CALLS)).converse(any(ConverseRequest.class));
+	}
+
+	// With real threads: while one question holds the only permit, another is turned away at
+	// once; after it finishes, the next question gets through again.
+	@Test
+	void bulkheadTurnsAwayQuestionsOverTheLimit() throws Exception {
+		AgentService oneAtATime = new AgentService(bedrock, properties, jsonMapper,
+				new AgentToolRunner(jsonMapper, List.of(tool)),
+				new ExternalMcpTools(List.of(), new AgentProperties(null), Clock.systemUTC()), usage, budget, breakers,
+				BulkheadRegistry.of(BulkheadConfig.custom().maxConcurrentCalls(1).maxWaitDuration(Duration.ZERO).build()));
+		CountDownLatch modelCalled = new CountDownLatch(1);
+		CountDownLatch release = new CountDownLatch(1);
+		given(bedrock.converse(any(ConverseRequest.class))).willAnswer(invocation -> {
+			modelCalled.countDown();
+			release.await(); // a slow model call
+			return response(StopReason.END_TURN, ContentBlock.fromText("Done."));
+		});
+
+		CompletableFuture<AgentResponse> first = CompletableFuture.supplyAsync(() -> oneAtATime.ask("First?", bob));
+		assertThat(modelCalled.await(5, TimeUnit.SECONDS)).isTrue();
+
+		assertThatThrownBy(() -> oneAtATime.ask("Second?", bob)).isInstanceOf(ServiceUnavailableException.class)
+			.hasMessageContaining("busy");
+
+		release.countDown();
+		assertThat(first.get(5, TimeUnit.SECONDS).answer()).isEqualTo("Done.");
+		assertThat(oneAtATime.ask("Third?", bob).answer()).isEqualTo("Done.");
 	}
 
 	@Test

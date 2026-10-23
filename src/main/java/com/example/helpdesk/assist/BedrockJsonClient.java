@@ -46,13 +46,16 @@ public class BedrockJsonClient {
 
 	private final AiBudget budget;
 
+	private final BedrockCircuitBreakers breakers;
+
 	public BedrockJsonClient(BedrockRuntimeClient bedrock, AiProperties properties, JsonMapper jsonMapper,
-			AiUsageService usage, AiBudget budget) {
+			AiUsageService usage, AiBudget budget, BedrockCircuitBreakers breakers) {
 		this.bedrock = bedrock;
 		this.properties = properties;
 		this.jsonMapper = jsonMapper;
 		this.usage = usage;
 		this.budget = budget;
+		this.breakers = breakers;
 	}
 
 	// caller: who the tokens are counted against. task: a short label for the logs, e.g.
@@ -76,7 +79,7 @@ public class BedrockJsonClient {
 
 		ConverseResponse response;
 		try {
-			response = bedrock.converse(request);
+			response = breakers.call(properties.model(), () -> bedrock.converse(request));
 		}
 		catch (SdkException ex) {
 			// Bedrock answered with an error (no model access, throttling...), the call timed
