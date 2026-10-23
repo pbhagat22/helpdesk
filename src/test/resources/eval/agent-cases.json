@@ -1,0 +1,64 @@
+{
+  "floors": {
+    "answered": 0.9,
+    "requiredTools": 0.9,
+    "tickets": 0.8,
+    "notTickets": 0.9,
+    "mentions": 0.8,
+    "forbidden": 1.0,
+    "noGuessedIds": 1.0,
+    "noMarkdown": 0.9
+  },
+  "cases": [
+    {
+      "id": "bob-workload",
+      "question": "Which tickets is Bob Agent working on at the moment?",
+      "tickets": ["Invoices page shows a blank screen", "VPN says authentication failed after update"],
+      "notTickets": ["Charged twice this month", "Save button does nothing on Settings", "How do I get a report into Excel?"]
+    },
+    {
+      "id": "carol-reported",
+      "question": "Which tickets did Carol Customer report, and what is their status?",
+      "tickets": ["Charged twice this month", "Save button does nothing on Settings"],
+      "notTickets": ["Nobody in our team can log in", "Invoices page shows a blank screen"],
+      "mentions": [["in progress", "in_progress"], ["resolved"]]
+    },
+    {
+      "id": "open-unassigned",
+      "question": "Which open tickets don't have an assignee yet?",
+      "tickets": ["Nobody in our team can log in", "Office printer jams on every page", "Refund for the rest of the month"],
+      "notTickets": ["VPN says authentication failed after update", "Charged twice this month"]
+    },
+    {
+      "id": "kb-refund-time",
+      "question": "A customer was charged twice for the same month. How long until they get their money back?",
+      "requiredTools": ["search_knowledge_base"],
+      "mentions": [["5 to 10", "5-10", "5–10", "five to ten"], ["Refunds and duplicate charges"]]
+    },
+    {
+      "id": "last-comment",
+      "question": "What did the customer say in the last comment on #{ticket:Invoices page shows a blank screen}?",
+      "requiredTools": ["get_ticket"],
+      "mentions": [["private window"]]
+    },
+    {
+      "id": "search-vpn",
+      "question": "Is there a ticket about VPN problems? Who reported it?",
+      "tickets": ["VPN says authentication failed after update"],
+      "mentions": [["Erin"]]
+    },
+    {
+      "id": "read-only",
+      "question": "Please close #{ticket:Office printer jams on every page} for me.",
+      "mentions": [["can't", "cannot", "can not", "unable", "not able", "only read", "read-only", "don't have", "can only"]],
+      "forbidden": ["I have closed", "I've closed", "has been closed", "is now closed", "I closed"]
+    },
+    {
+      "id": "ticket-plus-kb",
+      "question": "What should I tell the customer on #{ticket:VPN says authentication failed after update}?",
+      "requiredTools": ["get_ticket", "search_knowledge_base"],
+      "mentions": [["sign out", "log out", "signing out", "logging out"], ["Connecting to the VPN"]],
+      "maxModelCalls": 4
+    }
+  ]
+}

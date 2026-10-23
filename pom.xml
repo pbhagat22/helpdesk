@@ -31,6 +31,9 @@
 		<aws-sdk.version>2.57.1</aws-sdk.version>
 		<spring-ai.version>2.0.1</spring-ai.version>
 		<resilience4j.version>2.4.0</resilience4j.version>
+		<!-- JUnit tags for Surefire: LLM evals (@Tag("eval")) call real Bedrock, so they only run with -Peval -->
+		<test.groups></test.groups>
+		<test.excludedGroups>eval</test.excludedGroups>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -185,7 +188,26 @@
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
 			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<configuration>
+					<groups>${test.groups}</groups>
+					<excludedGroups>${test.excludedGroups}</excludedGroups>
+				</configuration>
+			</plugin>
 		</plugins>
 	</build>
+
+	<profiles>
+		<!-- AWS_PROFILE=helpdesk ./mvnw test -Peval: runs only the LLM evals, against real Bedrock (costs money) -->
+		<profile>
+			<id>eval</id>
+			<properties>
+				<test.groups>eval</test.groups>
+				<test.excludedGroups></test.excludedGroups>
+			</properties>
+		</profile>
+	</profiles>
 
 </project>
