@@ -86,9 +86,9 @@ class TicketAssistServiceTests {
 
 	@Test
 	void suggestSearchesTheKnowledgeBaseAndReturnsTheArticlesUsed() {
-		given(knowledgeBase.search(contains("Printer on fire"), eq(TicketAssistService.MAX_ARTICLES), eq(bob.getId())))
+		given(knowledgeBase.search(contains("Printer on fire"), eq(TicketAssistService.MAX_ARTICLES), eq(bob)))
 			.willReturn(List.of(printerArticle));
-		given(llm.ask(eq(AiCaller.user(AiFeature.ASSIST, bob.getId())), eq("assist ticket 1"),
+		given(llm.ask(eq(AiCaller.user(AiFeature.ASSIST, bob)), eq("assist ticket 1"),
 				eq(TicketAssistService.SYSTEM_PROMPT),
 				contains("<article id=\"7\""), eq("ticket_assist"), eq(TicketAssistService.SCHEMA),
 				eq(AssistAnswer.class)))

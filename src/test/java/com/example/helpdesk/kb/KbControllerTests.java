@@ -6,6 +6,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 
+import java.time.Duration;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
@@ -17,6 +18,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.assertj.MockMvcTester;
 
+import com.example.helpdesk.common.TooManyRequestsException;
 import com.example.helpdesk.security.HelpdeskUserDetails;
 import com.example.helpdesk.security.SecurityConfig;
 import com.example.helpdesk.user.Role;
@@ -42,13 +44,26 @@ class KbControllerTests {
 
 	@Test
 	void customersCanSearch() {
-		given(knowledgeBase.search("forgot password", 5, alice.getId()))
+		given(knowledgeBase.search("forgot password", 5, alice))
 			.willReturn(List.of(new ArticleSearchResult(1L, "Passwords", "Click reset.", 0.4)));
 
 		assertThat(mvc.get().uri("/api/kb/search?q=forgot password").with(user(alice))).hasStatusOk()
 			.bodyJson()
 			.extractingPath("$[0].title")
 			.isEqualTo("Passwords");
+	}
+
+	@Test
+	void overBudgetIs429WithRetryAfter() {
+		given(knowledgeBase.search("forgot password", 5, alice))
+			.willThrow(new TooManyRequestsException("You've used your AI allowance for today", Duration.ofHours(9)));
+
+		assertThat(mvc.get().uri("/api/kb/search?q=forgot password").with(user(alice)))
+			.hasStatus(HttpStatus.TOO_MANY_REQUESTS)
+			.hasHeader("Retry-After", "32400")
+			.bodyJson()
+			.extractingPath("$.detail")
+			.isEqualTo("You've used your AI allowance for today");
 	}
 
 	@Test

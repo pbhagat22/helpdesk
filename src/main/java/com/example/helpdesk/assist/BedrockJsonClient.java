@@ -44,18 +44,23 @@ public class BedrockJsonClient {
 
 	private final AiUsageService usage;
 
+	private final AiBudget budget;
+
 	public BedrockJsonClient(BedrockRuntimeClient bedrock, AiProperties properties, JsonMapper jsonMapper,
-			AiUsageService usage) {
+			AiUsageService usage, AiBudget budget) {
 		this.bedrock = bedrock;
 		this.properties = properties;
 		this.jsonMapper = jsonMapper;
 		this.usage = usage;
+		this.budget = budget;
 	}
 
 	// caller: who the tokens are counted against. task: a short label for the logs, e.g.
-	// "assist ticket 4". Throws ServiceUnavailableException if there's no complete, valid answer.
+	// "assist ticket 4". Throws TooManyRequestsException if a daily budget is used up, and
+	// ServiceUnavailableException if there's no complete, valid answer.
 	public <T extends Record> T ask(AiCaller caller, String task, String systemPrompt, String userPrompt,
 			String schemaName, String schema, Class<T> answerType) {
+		budget.check(caller);
 		ConverseRequest request = ConverseRequest.builder()
 			.modelId(properties.model())
 			.system(SystemContentBlock.fromText(systemPrompt))

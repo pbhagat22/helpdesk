@@ -103,7 +103,7 @@ public class TicketAssistService {
 		TicketResponse ticket = ticketService.get(ticketId, me);
 		List<CommentResponse> comments = ticketService.listComments(ticketId, me);
 		List<ArticleSearchResult> articles = relevantArticles(ticket, me);
-		AssistAnswer answer = llm.ask(AiCaller.user(AiFeature.ASSIST, me.getId()), "assist ticket " + ticketId,
+		AssistAnswer answer = llm.ask(AiCaller.user(AiFeature.ASSIST, me), "assist ticket " + ticketId,
 				SYSTEM_PROMPT, prompt(ticket, comments, articles), "ticket_assist", SCHEMA, AssistAnswer.class);
 		return new AssistResponse(answer.summary(), answer.suggestedReply(),
 				sources(answer.sourceArticleIds(), articles));
@@ -114,7 +114,7 @@ public class TicketAssistService {
 	// assist still works, just without articles, as it did before the knowledge base existed.
 	private List<ArticleSearchResult> relevantArticles(TicketResponse ticket, HelpdeskUserDetails me) {
 		try {
-			return knowledgeBase.search(ticket.title() + "\n\n" + ticket.description(), MAX_ARTICLES, me.getId());
+			return knowledgeBase.search(ticket.title() + "\n\n" + ticket.description(), MAX_ARTICLES, me);
 		}
 		catch (ServiceUnavailableException ex) {
 			log.warn("Knowledge base search failed for ticket {}; assisting without articles", ticket.id(), ex);

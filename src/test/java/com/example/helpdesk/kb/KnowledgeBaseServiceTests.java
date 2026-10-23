@@ -11,6 +11,7 @@ import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -22,8 +23,14 @@ import com.example.helpdesk.assist.AiCaller;
 import com.example.helpdesk.assist.AiFeature;
 import com.example.helpdesk.assist.EmbeddingClient;
 import com.example.helpdesk.common.ServiceUnavailableException;
+import com.example.helpdesk.common.TooManyRequestsException;
+import com.example.helpdesk.security.HelpdeskUserDetails;
+import com.example.helpdesk.user.Role;
 
 class KnowledgeBaseServiceTests {
+
+	private static final HelpdeskUserDetails bob = new HelpdeskUserDetails(2L, "bob@example.com", "unused",
+			Role.AGENT);
 
 	private final KbArticleService articles = mock(KbArticleService.class);
 
@@ -40,9 +47,9 @@ class KnowledgeBaseServiceTests {
 		given(articles.text(1L)).willReturn(Optional.of(new KbArticleService.ArticleText("Passwords", "Click reset.")));
 		given(embeddings.embed(anyString(), any())).willReturn(vector);
 
-		service.index(1L, 2L);
+		service.index(1L, bob);
 
-		then(embeddings).should().embed("Passwords\n\nClick reset.", AiCaller.user(AiFeature.KB_INDEX, 2L));
+		then(embeddings).should().embed("Passwords\n\nClick reset.", new AiCaller(AiFeature.KB_INDEX, 2L, Role.AGENT));
 		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<KbChunkStore.EmbeddedChunk>> stored = ArgumentCaptor.forClass(List.class);
 		then(chunks).should().replace(eq(1L), stored.capture());
@@ -57,21 +64,34 @@ class KnowledgeBaseServiceTests {
 		given(articles.text(1L)).willReturn(Optional.of(new KbArticleService.ArticleText("Passwords", "Click reset.")));
 		given(embeddings.embed(anyString(), any())).willThrow(new ServiceUnavailableException("down", null));
 
-		service.create(request, 2L);
+		service.create(request, bob);
 
 		then(chunks).should(never()).replace(anyLong(), any());
 		then(articles).should().get(1L);
 	}
 
 	@Test
+	void updateSavesTheArticleEvenOverBudget() {
+		ArticleRequest request = new ArticleRequest("Passwords", "Click reset.");
+		given(articles.text(1L)).willReturn(Optional.of(new KbArticleService.ArticleText("Passwords", "Click reset.")));
+		given(embeddings.embed(anyString(), any()))
+			.willThrow(new TooManyRequestsException("allowance used", Duration.ofHours(1)));
+
+		service.update(1L, request, bob);
+
+		then(articles).should().update(1L, request);
+		then(chunks).should(never()).replace(anyLong(), any());
+	}
+
+	@Test
 	void searchKeepsTheBestChunkPerArticleAndDropsWeakMatches() {
-		given(embeddings.embed("forgot password", AiCaller.user(AiFeature.KB_SEARCH, 2L))).willReturn(vector);
+		given(embeddings.embed("forgot password", new AiCaller(AiFeature.KB_SEARCH, 2L, Role.AGENT))).willReturn(vector);
 		given(chunks.nearest(eq(vector), anyInt())).willReturn(List.of(new KbChunkStore.Match(1, 0, "best", 0.5),
 				new KbChunkStore.Match(1, 1, "second best of article 1", 0.6),
 				new KbChunkStore.Match(2, 0, "billing", 0.7), new KbChunkStore.Match(3, 0, "weather", 0.95)));
 		given(articles.titles(List.of(1L, 2L))).willReturn(Map.of(1L, "Passwords", 2L, "Billing"));
 
-		List<ArticleSearchResult> results = service.search("forgot password", 5, 2L);
+		List<ArticleSearchResult> results = service.search("forgot password", 5, bob);
 
 		assertThat(results).containsExactly(new ArticleSearchResult(1L, "Passwords", "best", 0.5),
 				new ArticleSearchResult(2L, "Billing", "billing", 1 - 0.7));

@@ -40,12 +40,15 @@ public class EmbeddingClient {
 
 	private final AiUsageService usage;
 
+	private final AiBudget budget;
+
 	public EmbeddingClient(BedrockRuntimeClient bedrock, AiProperties properties, JsonMapper jsonMapper,
-			AiUsageService usage) {
+			AiUsageService usage, AiBudget budget) {
 		this.bedrock = bedrock;
 		this.properties = properties;
 		this.jsonMapper = jsonMapper;
 		this.usage = usage;
+		this.budget = budget;
 	}
 
 	record TitanResponse(List<Float> embedding, int inputTextTokenCount) {
@@ -54,7 +57,9 @@ public class EmbeddingClient {
 	// normalize: every vector gets length 1, so cosine distance (pgvector's <=>) only compares
 	// directions, i.e. meaning, not how long the text was.
 	// caller: who the tokens are counted against (embeddings bill input tokens only).
+	// Throws TooManyRequestsException if a daily budget is used up.
 	public float[] embed(String text, AiCaller caller) {
+		budget.check(caller);
 		String body = jsonMapper
 			.writeValueAsString(Map.of("inputText", text, "dimensions", DIMENSIONS, "normalize", true));
 		InvokeModelResponse response;

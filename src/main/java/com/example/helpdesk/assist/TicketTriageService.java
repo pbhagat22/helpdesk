@@ -12,6 +12,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 import com.example.helpdesk.common.NotFoundException;
+import com.example.helpdesk.common.TooManyRequestsException;
 import com.example.helpdesk.security.HelpdeskUserDetails;
 import com.example.helpdesk.ticket.Category;
 import com.example.helpdesk.ticket.Priority;
@@ -98,8 +99,17 @@ public class TicketTriageService {
 			log.warn("Ticket {} no longer exists; not triaging it", ticketId);
 			return;
 		}
-		TriageAnswer answer = llm.ask(AiCaller.background(AiFeature.TRIAGE), "triage ticket " + ticketId,
-				SYSTEM_PROMPT, prompt(ticket.get()), "ticket_triage", SCHEMA, TriageAnswer.class);
+		TriageAnswer answer;
+		try {
+			answer = llm.ask(AiCaller.background(AiFeature.TRIAGE), "triage ticket " + ticketId, SYSTEM_PROMPT,
+					prompt(ticket.get()), "ticket_triage", SCHEMA, TriageAnswer.class);
+		}
+		catch (TooManyRequestsException ex) {
+			// The daily spending cap: skip this ticket rather than fail, because the Kafka error
+			// handler's retries would hit the same cap. It stays without a suggestion.
+			log.warn("Not triaging ticket {}: {}", ticketId, ex.getMessage());
+			return;
+		}
 		String reason = answer.reason().length() > MAX_REASON_LENGTH
 				? answer.reason().substring(0, MAX_REASON_LENGTH - 1) + "…" : answer.reason();
 		try {

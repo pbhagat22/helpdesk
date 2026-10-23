@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
 import com.example.helpdesk.common.BadRequestException;
 import com.example.helpdesk.common.NotFoundException;
 import com.example.helpdesk.common.ServiceUnavailableException;
+import com.example.helpdesk.common.TooManyRequestsException;
 import com.example.helpdesk.security.HelpdeskUserDetails;
 
 import tools.jackson.core.JacksonException;
@@ -83,7 +84,8 @@ public class AgentToolRunner {
 	// tell the model only that it failed.
 	private static String errorMessage(RuntimeException ex) {
 		if (ex instanceof NotFoundException || ex instanceof BadRequestException
-				|| ex instanceof ServiceUnavailableException || ex instanceof IllegalArgumentException) {
+				|| ex instanceof ServiceUnavailableException || ex instanceof TooManyRequestsException
+				|| ex instanceof IllegalArgumentException) {
 			return ex.getMessage();
 		}
 		log.warn("Agent tool failed", ex);

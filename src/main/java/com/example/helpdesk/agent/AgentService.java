@@ -11,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import com.example.helpdesk.assist.AiBudget;
 import com.example.helpdesk.assist.AiCaller;
 import com.example.helpdesk.assist.AiFeature;
 import com.example.helpdesk.assist.AiProperties;
@@ -107,16 +108,19 @@ public class AgentService {
 
 	private final AiUsageService usage;
 
+	private final AiBudget budget;
+
 	private final Set<String> ownToolNames;
 
 	public AgentService(BedrockRuntimeClient bedrock, AiProperties properties, JsonMapper jsonMapper,
-			AgentToolRunner toolRunner, ExternalMcpTools externalTools, AiUsageService usage) {
+			AgentToolRunner toolRunner, ExternalMcpTools externalTools, AiUsageService usage, AiBudget budget) {
 		this.bedrock = bedrock;
 		this.properties = properties;
 		this.jsonMapper = jsonMapper;
 		this.toolRunner = toolRunner;
 		this.externalTools = externalTools;
 		this.usage = usage;
+		this.budget = budget;
 		this.ownToolNames = toolRunner.tools().stream().map(AgentTool::name).collect(Collectors.toSet());
 	}
 
@@ -130,15 +134,18 @@ public class AgentService {
 		int outputTokens = 0;
 		// Set once our own tools have returned helpdesk data into the conversation (see runTool)
 		boolean privateDataSeen = false;
+		AiCaller caller = AiCaller.user(AiFeature.AGENT, me);
 
 		for (int call = 1; call <= MAX_MODEL_CALLS; call++) {
+			// Checked before every call, because each one resends the whole (growing) conversation
+			budget.check(caller);
 			ConverseResponse response = converse(system, messages);
 			inputTokens += response.usage().inputTokens();
 			outputTokens += response.usage().outputTokens();
 			log.info("AI agent call {} for user {}: model={}, stop={}, input tokens={}, output tokens={}", call,
 					me.getId(), properties.agentModel(), response.stopReason(), response.usage().inputTokens(), response.usage().outputTokens());
-			usage.record(AiCaller.user(AiFeature.AGENT, me.getId()), properties.agentModel(),
-					response.usage().inputTokens(), response.usage().outputTokens());
+			usage.record(caller, properties.agentModel(), response.usage().inputTokens(),
+					response.usage().outputTokens());
 
 			// The model's message goes into the history unchanged, including any reasoning blocks
 			Message reply = response.output().message();

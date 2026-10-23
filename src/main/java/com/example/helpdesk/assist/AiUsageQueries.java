@@ -21,10 +21,42 @@ public class AiUsageQueries {
 	public record UserRow(long userId, String email, String model, long calls, long inputTokens, long outputTokens) {
 	}
 
+	public record ModelRow(String model, long inputTokens, long outputTokens) {
+	}
+
 	private final JdbcClient jdbc;
 
 	public AiUsageQueries(JdbcClient jdbc) {
 		this.jdbc = jdbc;
+	}
+
+	// One user's input + output tokens since the given time (index ai_usage_user_created_idx)
+	@Transactional(readOnly = true)
+	public long userTokens(long userId, Instant since) {
+		return jdbc.sql("""
+				select coalesce(sum(input_tokens + output_tokens), 0)
+				from ai_usage
+				where user_id = :userId and created_at >= :since
+				""")
+			.param("userId", userId)
+			.param("since", Timestamp.from(since))
+			.query(Long.class)
+			.single();
+	}
+
+	// Everyone's tokens per model since the given time, background work included
+	@Transactional(readOnly = true)
+	public List<ModelRow> byModel(Instant since) {
+		return jdbc.sql("""
+				select model, sum(input_tokens) as input_tokens, sum(output_tokens) as output_tokens
+				from ai_usage
+				where created_at >= :since
+				group by model
+				""")
+			.param("since", Timestamp.from(since))
+			.query((rs, row) -> new ModelRow(rs.getString("model"), rs.getLong("input_tokens"),
+					rs.getLong("output_tokens")))
+			.list();
 	}
 
 	@Transactional(readOnly = true)

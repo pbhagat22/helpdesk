@@ -16,6 +16,7 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import com.example.helpdesk.assist.AiBudget;
 import com.example.helpdesk.assist.AiCaller;
 import com.example.helpdesk.assist.AiFeature;
 import com.example.helpdesk.assist.AiProperties;
@@ -97,10 +98,12 @@ class AgentServiceTests {
 
 	private final AiUsageService usage = mock(AiUsageService.class);
 
+	private final AiBudget budget = mock(AiBudget.class);
+
 	// No external MCP servers, except in the test that's about them
 	private final AgentService agent = new AgentService(bedrock, properties, jsonMapper,
 			new AgentToolRunner(jsonMapper, List.of(tool)),
-			new ExternalMcpTools(List.of(), new AgentProperties(null), Clock.systemUTC()), usage);
+			new ExternalMcpTools(List.of(), new AgentProperties(null), Clock.systemUTC()), usage, budget);
 
 	@Test
 	void runsTheRequestedToolAndSendsTheResultBack() {
@@ -115,7 +118,7 @@ class AgentServiceTests {
 		assertThat(result.modelCalls()).isEqualTo(2);
 		assertThat(result.inputTokens()).isEqualTo(200);
 		// Every model call is recorded in the usage ledger, against the user who asked
-		verify(usage, times(2)).record(AiCaller.user(AiFeature.AGENT, bob.getId()), "agent-model", 100, 20);
+		verify(usage, times(2)).record(new AiCaller(AiFeature.AGENT, 2L, Role.AGENT), "agent-model", 100, 20);
 		// The tool ran as the user who asked, not with any extra rights
 		assertThat(tool.ranAs).isSameAs(bob);
 
@@ -232,7 +235,7 @@ class AgentServiceTests {
 			.build());
 		given(docs.callTool(any())).willReturn(McpSchema.CallToolResult.builder().addTextContent("Lambda: at most 15 minutes").build());
 		return new AgentService(bedrock, properties, jsonMapper, new AgentToolRunner(jsonMapper, List.of(tool)),
-				new ExternalMcpTools(List.of(docs), new AgentProperties(List.of("search_docs")), Clock.systemUTC()), usage);
+				new ExternalMcpTools(List.of(docs), new AgentProperties(List.of("search_docs")), Clock.systemUTC()), usage, budget);
 	}
 
 	// A model that never stops calling tools must not loop (and bill) forever.

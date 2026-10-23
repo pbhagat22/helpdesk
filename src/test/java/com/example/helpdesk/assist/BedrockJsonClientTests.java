@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -15,8 +16,10 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import com.example.helpdesk.common.ServiceUnavailableException;
+import com.example.helpdesk.common.TooManyRequestsException;
 import com.example.helpdesk.ticket.Category;
 import com.example.helpdesk.ticket.Priority;
+import com.example.helpdesk.user.Role;
 
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.services.bedrockruntime.BedrockRuntimeClient;
@@ -37,11 +40,13 @@ class BedrockJsonClientTests {
 
 	private final AiUsageService usage = mock(AiUsageService.class);
 
+	private final AiBudget budget = mock(AiBudget.class);
+
 	private final BedrockJsonClient client = new BedrockJsonClient(bedrock,
 			new AiProperties("us-east-2", "test-model", "test-agent-model", "test-embedding-model", Duration.ofSeconds(5)), JsonMapper.builder().build(),
-			usage);
+			usage, budget);
 
-	private final AiCaller caller = AiCaller.user(AiFeature.ASSIST, 2L);
+	private final AiCaller caller = new AiCaller(AiFeature.ASSIST, 2L, Role.AGENT);
 
 	private AssistAnswer askForAssist() {
 		return client.ask(caller, "test", "system prompt", "user prompt", "ticket_assist", TicketAssistService.SCHEMA,
@@ -118,6 +123,14 @@ class BedrockJsonClientTests {
 
 		assertThatThrownBy(this::askForAssist).isInstanceOf(ServiceUnavailableException.class)
 			.hasMessageContaining("suggestedReply");
+	}
+
+	@Test
+	void overBudgetNeverCallsBedrock() {
+		willThrow(new TooManyRequestsException("allowance used", Duration.ofHours(1))).given(budget).check(caller);
+
+		assertThatThrownBy(this::askForAssist).isInstanceOf(TooManyRequestsException.class);
+		verifyNoInteractions(bedrock, usage);
 	}
 
 	@Test

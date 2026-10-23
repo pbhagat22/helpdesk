@@ -17,6 +17,8 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataAccessResourceFailureException;
 
+import com.example.helpdesk.user.Role;
+
 class AiUsageServiceTests {
 
 	private final AiUsageRepository repository = mock(AiUsageRepository.class);
@@ -85,7 +87,7 @@ class AiUsageServiceTests {
 			.willThrow(new DataAccessResourceFailureException("db down"));
 
 		// No exception: the model's answer was already paid for, so the user still gets it
-		service.record(AiCaller.user(AiFeature.ASSIST, 2L), "small", 10, 5);
+		service.record(new AiCaller(AiFeature.ASSIST, 2L, Role.AGENT), "small", 10, 5);
 	}
 
 }

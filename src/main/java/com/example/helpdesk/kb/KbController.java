@@ -53,14 +53,14 @@ public class KbController {
 	@PreAuthorize("hasAnyRole('AGENT', 'ADMIN')")
 	public ArticleResponse create(@Valid @RequestBody ArticleRequest request,
 			@AuthenticationPrincipal HelpdeskUserDetails me) {
-		return knowledgeBase.create(request, me.getId());
+		return knowledgeBase.create(request, me);
 	}
 
 	@PutMapping("/api/kb/articles/{id}")
 	@PreAuthorize("hasAnyRole('AGENT', 'ADMIN')")
 	public ArticleResponse update(@PathVariable Long id, @Valid @RequestBody ArticleRequest request,
 			@AuthenticationPrincipal HelpdeskUserDetails me) {
-		return knowledgeBase.update(id, request, me.getId());
+		return knowledgeBase.update(id, request, me);
 	}
 
 	@DeleteMapping("/api/kb/articles/{id}")
@@ -74,14 +74,14 @@ public class KbController {
 	@GetMapping("/api/kb/search")
 	public List<ArticleSearchResult> search(@RequestParam @NotBlank @Size(max = 500) String q,
 			@AuthenticationPrincipal HelpdeskUserDetails me) {
-		return knowledgeBase.search(q, SEARCH_RESULTS, me.getId());
+		return knowledgeBase.search(q, SEARCH_RESULTS, me);
 	}
 
 	// Re-embeds every article, e.g. after changing the embedding model or a Bedrock outage.
 	@PostMapping("/api/admin/kb/reindex")
 	@PreAuthorize("hasRole('ADMIN')")
 	public Map<String, Integer> reindex(@AuthenticationPrincipal HelpdeskUserDetails me) {
-		return Map.of("articles", knowledgeBase.reindexAll(me.getId()));
+		return Map.of("articles", knowledgeBase.reindexAll(me));
 	}
 
 }

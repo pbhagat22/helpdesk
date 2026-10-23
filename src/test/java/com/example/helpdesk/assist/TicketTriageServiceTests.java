@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import com.example.helpdesk.common.NotFoundException;
+import com.example.helpdesk.common.TooManyRequestsException;
 import com.example.helpdesk.security.HelpdeskUserDetails;
 import com.example.helpdesk.ticket.Category;
 import com.example.helpdesk.ticket.Priority;
@@ -98,6 +99,20 @@ class TicketTriageServiceTests {
 		service.triage(1L);
 
 		verifyNoInteractions(llm);
+		then(triages).should().existsByTicketId(1L);
+		then(triages).shouldHaveNoMoreInteractions();
+	}
+
+	// Over the daily spending cap the ticket is skipped without an exception, so the Kafka
+	// error handler doesn't retry into the same cap.
+	@Test
+	void ticketIsSkippedWhenTheDailyCapIsReached() {
+		given(ticketService.find(1L)).willReturn(Optional.of(ticket));
+		given(llm.ask(any(), anyString(), anyString(), anyString(), anyString(), anyString(), eq(TriageAnswer.class)))
+			.willThrow(new TooManyRequestsException("cap reached", Duration.ofHours(1)));
+
+		service.triage(1L);
+
 		then(triages).should().existsByTicketId(1L);
 		then(triages).shouldHaveNoMoreInteractions();
 	}

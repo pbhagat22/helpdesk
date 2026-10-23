@@ -68,6 +68,14 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 		return ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage());
 	}
 
+	// 429: a quota is used up. Retry-After (in seconds) tells clients when to try again.
+	@ExceptionHandler(TooManyRequestsException.class)
+	ResponseEntity<ProblemDetail> handleTooManyRequests(TooManyRequestsException ex) {
+		return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+			.header(HttpHeaders.RETRY_AFTER, String.valueOf(ex.getRetryAfter().toSeconds()))
+			.body(ProblemDetail.forStatusAndDetail(HttpStatus.TOO_MANY_REQUESTS, ex.getMessage()));
+	}
+
 	// Safety net for unique constraints the service didn't check first
 	// (e.g. two requests registering the same email at the same moment).
 	@ExceptionHandler(DataIntegrityViolationException.class)

@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import com.example.helpdesk.common.ServiceUnavailableException;
+import com.example.helpdesk.user.Role;
 
 import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.services.bedrockruntime.BedrockRuntimeClient;
@@ -29,11 +30,13 @@ class EmbeddingClientTests {
 
 	private final AiUsageService usage = mock(AiUsageService.class);
 
+	private final AiBudget budget = mock(AiBudget.class);
+
 	private final EmbeddingClient client = new EmbeddingClient(bedrock,
 			new AiProperties("us-east-2", "m", "a", "titan-test", Duration.ofSeconds(5)), JsonMapper.builder().build(),
-			usage);
+			usage, budget);
 
-	private final AiCaller caller = AiCaller.user(AiFeature.KB_SEARCH, 2L);
+	private final AiCaller caller = new AiCaller(AiFeature.KB_SEARCH, 2L, Role.CUSTOMER);
 
 	private static InvokeModelResponse titanResponse(int dimensions) {
 		String vector = String.join(",", Collections.nCopies(dimensions, "0.5"));
