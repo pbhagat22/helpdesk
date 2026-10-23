@@ -113,6 +113,13 @@ This is a learning project: a support helpdesk (Users, Tickets, Comments, later 
    - 9c. RAG with pgvector
    - 9d. MCP server/client
 10. Kubernetes (kind locally, then short EKS sessions)
+   - 10.1–10.3. kind: StatefulSets, app Deployment with probes, zero-downtime rollouts, Kustomize
+   - A1. EKS with Terraform: cluster, ARM nodes, Pod Identity, RDS reused, the app through a Kustomize overlay
+   - A2. Helm (AWS Load Balancer Controller → ALB via Ingress), External Secrets from SSM, HPA + PodDisruptionBudget
+   - A3. GitOps CD with Argo CD: CI pushes to ECR and commits the new tag; dev/prod overlays
+   - A4. Observability: Prometheus + Grafana via Helm, Micrometer metrics
+
+   The kind cluster stays as a free test bench: each EKS step is checked there first (dry runs, `helm template`). The goal of the whole roadmap is to know how large companies build and deploy a complex application.
 
 `sandbox/spring_demo/demo` (a Todo app) is a separate scratch sandbox, not part of this project.
 
